@@ -303,6 +303,10 @@
   .sub-item label{cursor:pointer}
   .sub-item.done label{text-decoration:line-through; color:var(--faint)}
   .sub-item .sub-cb{cursor:pointer}
+  .sub-item.parent>label{font-weight:650}
+  .sub-children{display:flex; flex-direction:column; gap:7px; margin-top:7px; margin-left:9px; padding-left:13px; border-left:2px solid var(--border)}
+  .sub-add-child{width:28px; height:28px; border-radius:7px; color:var(--accent); font-size:19px; font-weight:700; line-height:1; display:grid; place-items:center; flex:none}
+  .sub-add-child:hover{background:var(--accent-weak)}
 </style>
 
 <!-- ============ Role picker ============ -->
@@ -565,30 +569,63 @@
   /* ---------- Composer ---------- */
   var editingId=null;
   var composerSubs=[];
+  function isLeaf(n){ return !(n.children && n.children.length); }
+  function nodeDone(n){ return isLeaf(n) ? !!n.done : n.children.every(nodeDone); }
+  function countLeaves(nodes){ var t=0,d=0; (nodes||[]).forEach(function(n){ if(isLeaf(n)){ t++; if(n.done) d++; } else { var r=countLeaves(n.children); t+=r.t; d+=r.d; } }); return {t:t,d:d}; }
+  function setDoneRec(n,val){ if(isLeaf(n)){ n.done=val; } else { n.children.forEach(function(c){ setDoneRec(c,val); }); } }
+  function findNode(nodes,id){ for(var i=0;i<(nodes||[]).length;i++){ if(nodes[i].id===id) return nodes[i]; var f=findNode(nodes[i].children,id); if(f) return f; } return null; }
+  function cloneSubs(nodes){ return (nodes||[]).map(function(n){ return {id:n.id, title:n.title, done:!!n.done, children:cloneSubs(n.children)}; }); }
+  function cleanSubs(nodes){ return (nodes||[]).filter(function(n){ return (n.title||"").trim(); }).map(function(n){ return {id:n.id||uid(), title:n.title.trim(), done:!!n.done, children:cleanSubs(n.children)}; }); }
   function taskProgress(t){
-    if(t.subtasks && t.subtasks.length){ var d=t.subtasks.filter(function(s){return s.done;}).length; return Math.round(d/t.subtasks.length*100); }
+    if(t.subtasks && t.subtasks.length){ var r=countLeaves(t.subtasks); return r.t?Math.round(r.d/r.t*100):0; }
     return Number(t.progress)||0;
   }
-  function renderSubEditor(){
-    var box=$("subEditor"); box.innerHTML="";
-    composerSubs.forEach(function(s,idx){
-      var row=document.createElement("div"); row.className="sub-row";
-      row.innerHTML='<button type="button" class="sub-cb'+(s.done?" on":"")+'" aria-label="Toggle done">'+ICON.check+'</button>'
-        +'<input type="text" placeholder="Sub-task" value="'+esc(s.title)+'">'
+  function subListHTML(nodes){
+    return (nodes||[]).map(function(n){
+      var done=nodeDone(n);
+      var h='<div class="sub-item'+(done?" done":"")+(isLeaf(n)?"":" parent")+'" data-sid="'+n.id+'"><button type="button" class="sub-cb'+(done?" on":"")+'" aria-label="Toggle sub-task">'+ICON.check+'</button><label>'+esc(n.title)+'</label></div>';
+      if(!isLeaf(n)) h+='<div class="sub-children">'+subListHTML(n.children)+'</div>';
+      return h;
+    }).join("");
+  }
+  function bindCardSubs(el,t){
+    el.querySelectorAll(".sub-item").forEach(function(item){
+      var sid=item.getAttribute("data-sid");
+      function toggle(e){ if(e) e.preventDefault();
+        var n=findNode(t.subtasks,sid); if(!n) return;
+        setDoneRec(n, !nodeDone(n)); save();
+        el.querySelector(".sub-list").innerHTML=subListHTML(t.subtasks); bindCardSubs(el,t);
+        var p2=taskProgress(t), bar=el.querySelector(".tprog-bar span"), pe=el.querySelector(".tprog-pct");
+        if(bar){ bar.style.width=p2+"%"; bar.classList.toggle("full", p2>=100); }
+        if(pe) pe.textContent=p2+"%";
+        var r=countLeaves(t.subtasks), sum=el.querySelector(".subsum"); if(sum) sum.textContent=r.d+"/"+r.t+" done";
+      }
+      item.querySelector(".sub-cb").addEventListener("click", toggle);
+      item.querySelector("label").addEventListener("click", toggle);
+    });
+  }
+  function renderSubEditor(){ var box=$("subEditor"); box.innerHTML=""; renderSubEditorList(composerSubs, box, 0); updateComposerProgress(); }
+  function renderSubEditorList(nodes, box, depth){
+    nodes.forEach(function(n,idx){
+      if(!n.children) n.children=[];
+      var done=nodeDone(n), canChild=depth<1;
+      var row=document.createElement("div"); row.className="sub-row"; if(depth>0) row.style.marginLeft=(depth*20)+"px";
+      row.innerHTML='<button type="button" class="sub-cb'+(done?" on":"")+'" aria-label="Toggle done">'+ICON.check+'</button>'
+        +'<input type="text" placeholder="'+(depth?"Sub-sub-task":"Sub-task")+'" value="'+esc(n.title)+'">'
+        +(canChild?'<button type="button" class="sub-add-child" title="Add sub-sub-task" aria-label="Add sub-sub-task">+</button>':"")
         +'<button type="button" class="sub-del" aria-label="Remove">'+ICON.trash+'</button>';
-      row.querySelector(".sub-cb").onclick=function(){ s.done=!s.done; this.classList.toggle("on"); updateComposerProgress(); };
-      row.querySelector("input").oninput=function(){ s.title=this.value; };
-      row.querySelector(".sub-del").onclick=function(){ composerSubs.splice(idx,1); renderSubEditor(); updateComposerProgress(); };
+      row.querySelector(".sub-cb").onclick=function(){ setDoneRec(n, !nodeDone(n)); renderSubEditor(); };
+      row.querySelector("input").oninput=function(){ n.title=this.value; };
+      if(canChild) row.querySelector(".sub-add-child").onclick=function(){ n.children.push({id:uid(),title:"",done:false,children:[]}); renderSubEditor(); var ins=$("subEditor").querySelectorAll("input[type=text]"); if(ins.length) ins[ins.length-1].focus(); };
+      row.querySelector(".sub-del").onclick=function(){ nodes.splice(idx,1); renderSubEditor(); };
       box.appendChild(row);
+      if(n.children.length) renderSubEditorList(n.children, box, depth+1);
     });
   }
   function updateComposerProgress(){
     var rng=$("cProg"), val=$("progVal");
-    if(composerSubs.length){
-      var d=composerSubs.filter(function(s){return s.done;}).length;
-      var pct=Math.round(d/composerSubs.length*100);
-      val.textContent=pct+"% ("+d+"/"+composerSubs.length+" sub-tasks)"; rng.style.display="none";
-    } else { val.textContent=(rng.value||0)+"%"; rng.style.display=""; }
+    if(composerSubs.length){ var r=countLeaves(composerSubs); var pct=r.t?Math.round(r.d/r.t*100):0; val.textContent=pct+"% ("+r.d+"/"+r.t+" done)"; rng.style.display="none"; }
+    else { val.textContent=(rng.value||0)+"%"; rng.style.display=""; }
   }
   function fillCatSelects(){
     var def=roleDef(state.role);
@@ -608,8 +645,8 @@
     $("cNotes").value = task ? (task.notes||"") : "";
     $("cRemark").value = task ? (task.remark||"") : "";
     $("cProg").value = task ? (task.progress||0) : 0;
-    composerSubs = task && task.subtasks ? task.subtasks.map(function(s){ return {id:s.id, title:s.title, done:!!s.done}; }) : [];
-    renderSubEditor(); updateComposerProgress();
+    composerSubs = task && task.subtasks ? cloneSubs(task.subtasks) : [];
+    renderSubEditor();
     $("cSave").textContent = task ? "Update task" : "Save task";
     $("composer").classList.add("open");
     $("cTitle").focus();
@@ -620,7 +657,7 @@
   $("cCancel").addEventListener("click", closeComposer);
   $("cSave").addEventListener("click", function(){
     var title=$("cTitle").value.trim(); if(!title){ $("cTitle").focus(); return; }
-    var subs=composerSubs.filter(function(s){return (s.title||"").trim();}).map(function(s){return {id:s.id||uid(), title:s.title.trim(), done:!!s.done};});
+    var subs=cleanSubs(composerSubs);
     var data={title:title, category:$("cCat").value, priority:$("cPri").value, due:$("cDue").value, notes:$("cNotes").value.trim(),
               subtasks:subs, remark:$("cRemark").value.trim(), progress:(Number($("cProg").value)||0)};
     if(editingId){
@@ -634,7 +671,7 @@
     save(); closeComposer(); render();
   });
   $("addSub").addEventListener("click", function(){
-    composerSubs.push({id:uid(), title:"", done:false}); renderSubEditor(); updateComposerProgress();
+    composerSubs.push({id:uid(), title:"", done:false, children:[]}); renderSubEditor();
     var ins=$("subEditor").querySelectorAll("input[type=text]"); if(ins.length) ins[ins.length-1].focus();
   });
   $("cProg").addEventListener("input", function(){ if(!composerSubs.length) $("progVal").textContent=this.value+"%"; });
@@ -678,10 +715,8 @@
     var remarkHtml=t.remark ? '<div class="t-remark"><span class="rk">Status</span><span>'+esc(t.remark)+'</span></div>' : "";
     var subsHtml="";
     if(hasSubs){
-      var dn=t.subtasks.filter(function(s){return s.done;}).length;
-      subsHtml='<details class="subs"><summary><span class="subsum">'+dn+'/'+t.subtasks.length+' sub-tasks</span></summary><div class="sub-list">'+
-        t.subtasks.map(function(s){ return '<div class="sub-item'+(s.done?" done":"")+'" data-sid="'+s.id+'"><button type="button" class="sub-cb'+(s.done?" on":"")+'" aria-label="Toggle sub-task">'+ICON.check+'</button><label>'+esc(s.title)+'</label></div>'; }).join("")+
-        '</div></details>';
+      var r=countLeaves(t.subtasks);
+      subsHtml='<details class="subs"><summary><span class="subsum">'+r.d+'/'+r.t+' done</span></summary><div class="sub-list">'+subListHTML(t.subtasks)+'</div></details>';
     }
     el.innerHTML=
       '<button class="check" title="Toggle complete" aria-label="Toggle complete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg></button>'+
@@ -698,22 +733,7 @@
     el.querySelector(".st-select").addEventListener("change", function(e){ setStatus(t.id, e.target.value); });
     el.querySelector(".edit").addEventListener("click", function(){ openComposer(t); });
     el.querySelector(".del").addEventListener("click", function(){ delTask(t.id); });
-    el.querySelectorAll(".sub-item").forEach(function(item){
-      var sid=item.getAttribute("data-sid");
-      function toggle(){
-        var st=t.subtasks.find(function(s){return s.id===sid;}); if(!st) return;
-        st.done=!st.done; save();
-        item.classList.toggle("done", st.done);
-        item.querySelector(".sub-cb").classList.toggle("on", st.done);
-        var p2=taskProgress(t), bar=el.querySelector(".tprog-bar span"), pe=el.querySelector(".tprog-pct");
-        if(bar){ bar.style.width=p2+"%"; bar.classList.toggle("full", p2>=100); }
-        if(pe){ pe.textContent=p2+"%"; }
-        var sum=el.querySelector(".subsum"), d2=t.subtasks.filter(function(s){return s.done;}).length;
-        if(sum) sum.textContent=d2+"/"+t.subtasks.length+" sub-tasks";
-      }
-      item.querySelector(".sub-cb").addEventListener("click", toggle);
-      item.querySelector("label").addEventListener("click", toggle);
-    });
+    bindCardSubs(el, t);
     return el;
   }
 
