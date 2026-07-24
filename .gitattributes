@@ -1,0 +1,2 @@
+# Keep shell scripts LF so bash/Git-hooks run correctly on any platform
+*.sh text eol=lf
