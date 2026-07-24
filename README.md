@@ -9,6 +9,11 @@ and an optional **starter checklist** for that role. Switch fields anytime.
 
 ## Features
 - **Role-based setup** — 7 built-in fields plus a custom field with your own categories.
+- **Personal tab (passcode-locked)** — the General / Personal field is protected by a passcode
+  and holds three sections: your personal **Tasks**, a monthly **Bills** tracker (recurring bills
+  with amounts, account references, and per-month paid/unpaid ticking + totals), and a daily
+  **Spending** tracker (log expenses, see today's and the month's totals). The passcode is a
+  local privacy lock — data is stored unencrypted on your device only.
 - **List & Board (Kanban) views** — grouped by To do / In progress / Completed.
 - **Progress at a glance** — completion donut + status counts.
 - **Task details** — category, priority (High / Medium / Low), due date (with overdue/soon
