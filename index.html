@@ -292,6 +292,19 @@
   .gate-card input:focus{outline:none; border-color:var(--accent); background:var(--surface)}
   .gate-err{color:var(--pri-high); font-size:13px; min-height:18px; margin:9px 0 4px}
 
+  /* ---------- Cloud sync ---------- */
+  #syncBtn.s-on{color:var(--done)} #syncBtn.s-off{color:var(--faint)} #syncBtn.s-err{color:var(--prog)}
+  .sync-card{max-width:410px; margin:8vh auto 0; text-align:left}
+  .sync-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px}
+  .sync-head h2{margin:0; font-size:19px; letter-spacing:-.01em}
+  .sync-head .icon-btn{width:32px; height:32px; font-size:15px}
+  #syncBody input{width:100%; padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); margin-top:10px; font-size:16px; text-align:left; letter-spacing:normal}
+  #syncBody input:focus{outline:none; border-color:var(--accent); background:var(--surface)}
+  #syncBody .btn[disabled]{opacity:.55; pointer-events:none}
+  .sync-note{font-size:12px; color:var(--muted); margin:14px 0 0; line-height:1.5}
+  .sync-signed .sync-email{font-weight:700; font-size:15px}
+  .sync-signed .sync-stat{font-size:12.5px; color:var(--muted); margin:3px 0 16px}
+
   /* ---------- Sub-tasks, progress, remark ---------- */
   .sub-editor{display:flex; flex-direction:column; gap:7px}
   .sub-row{display:flex; align-items:center; gap:8px}
@@ -368,6 +381,7 @@
       <button id="viewList" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><span class="hide-sm">List</span></button>
       <button id="viewBoard" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/></svg><span class="hide-sm">Board</span></button>
     </div>
+    <button class="icon-btn" id="syncBtn" title="Cloud sync" aria-label="Cloud sync"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.98A6 6 0 0 0 6.2 9.5 3.5 3.5 0 0 0 6.5 19h11z"/></svg></button>
     <button class="icon-btn" id="themeBtn" title="Theme" aria-label="Toggle theme"><svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
     <div class="menu-wrap">
       <button class="icon-btn" id="menuBtn" title="More" aria-label="More actions" aria-haspopup="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></button>
@@ -427,6 +441,13 @@
 
   <div id="board"></div>
 </main>
+
+<div class="overlay" id="syncModal" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
+  <div class="gate-card sync-card">
+    <div class="sync-head"><h2 id="syncTitle">Cloud sync</h2><button class="icon-btn" id="syncClose" aria-label="Close">✕</button></div>
+    <div id="syncBody"></div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -512,7 +533,7 @@
     if(key === "custom" && state.custom) return {em:"✳️", name:state.custom.name, cats:state.custom.cats, starters:[]};
     return ROLES[key] || {em:"✳️", name:"Field", cats:[], starters:[]};
   }
-  function save(){ localStorage.setItem(LS.tasks, JSON.stringify(state.tasks)); }
+  function save(){ localStorage.setItem(LS.tasks, JSON.stringify(state.tasks)); markDirty(); }
   function $(id){ return document.getElementById(id); }
 
   /* ---------- Theme ---------- */
@@ -567,7 +588,7 @@
     var cats=$("cfCats").value.split(",").map(function(s){return s.trim();}).filter(Boolean);
     if(!nm){ $("cfName").focus(); return; }
     if(!cats.length) cats=["General"];
-    state.custom={name:nm, cats:cats}; localStorage.setItem(LS.custom, JSON.stringify(state.custom));
+    state.custom={name:nm, cats:cats}; localStorage.setItem(LS.custom, JSON.stringify(state.custom)); markDirty();
     chooseRole("custom");
   });
 
@@ -772,9 +793,9 @@
     if(d===ys) return "Yesterday";
     var p=d.split("-"); return new Date(p[0],p[1]-1,p[2]).toLocaleDateString(undefined,{weekday:"short",day:"numeric",month:"short"});
   }
-  function saveBills(){ localStorage.setItem(LS.bills, JSON.stringify(state.bills)); }
-  function saveBillpaid(){ localStorage.setItem(LS.billpaid, JSON.stringify(state.billpaid)); }
-  function saveSpend(){ localStorage.setItem(LS.spend, JSON.stringify(state.spend)); }
+  function saveBills(){ localStorage.setItem(LS.bills, JSON.stringify(state.bills)); markDirty(); }
+  function saveBillpaid(){ localStorage.setItem(LS.billpaid, JSON.stringify(state.billpaid)); markDirty(); }
+  function saveSpend(){ localStorage.setItem(LS.spend, JSON.stringify(state.spend)); markDirty(); }
   function billById(id){ return state.bills.find(function(b){ return b.id===id; }); }
 
   /* ---------- Passcode (lock only, not encryption) ---------- */
@@ -833,7 +854,7 @@
         var v2=$("pinInput2").value;
         if(v.length<4){ err.textContent="Use at least 4 characters."; return; }
         if(v!==v2){ err.textContent="Passcodes don’t match."; return; }
-        localStorage.setItem(LS.pin, await sha256(v)); session.unlocked=true; render(); toast("Passcode set");
+        localStorage.setItem(LS.pin, await sha256(v)); markDirty(); session.unlocked=true; render(); toast("Passcode set");
       } else {
         if(await sha256(v)===localStorage.getItem(LS.pin)){ session.unlocked=true; render(); }
         else { err.textContent="Wrong passcode."; inp.select(); }
@@ -1086,13 +1107,164 @@
 
   /* ---------- Keyboard ---------- */
   document.addEventListener("keydown", function(e){
-    if(e.key==="Escape"){ $("menu").classList.remove("open"); if($("composer").classList.contains("open")) closeComposer(); }
-    if((e.key==="n"||e.key==="N") && !/input|textarea|select/i.test(e.target.tagName) && !$("overlay").classList.contains("open")){ e.preventDefault(); openComposer(null); }
+    if(e.key==="Escape"){ $("menu").classList.remove("open"); if($("syncModal").classList.contains("open")) closeSyncModal(); if($("composer").classList.contains("open")) closeComposer(); }
+    if((e.key==="n"||e.key==="N") && !/input|textarea|select/i.test(e.target.tagName) && !$("overlay").classList.contains("open") && !$("syncModal").classList.contains("open")){ e.preventDefault(); openComposer(null); }
   });
+
+  /* ---------- Cloud sync (Supabase REST, no library) ---------- */
+  var SB_URL="https://bmrbymonjlzqqkoehwcg.supabase.co";
+  var SB_KEY="sb_publishable_6x2auMW-D-PxUPTo7yvxFw_8dMDR7mT";
+  var sess=JSON.parse(localStorage.getItem("taskfield.session")||"null");
+  var pushTimer=null, lastSync=0, syncState="off";
+  state.updatedAt=Number(localStorage.getItem("taskfield.updatedAt")||0);
+
+  function markDirty(){ state.updatedAt=Date.now(); localStorage.setItem("taskfield.updatedAt", String(state.updatedAt)); schedulePush(); }
+  function schedulePush(){ if(!sess) return; clearTimeout(pushTimer); pushTimer=setTimeout(pushState, 1500); }
+
+  function setSession(j, user){
+    var u = user || (j.user?{id:j.user.id,email:j.user.email}:(sess?sess.user:null));
+    sess={ access_token:j.access_token, refresh_token:j.refresh_token, expires_at:Date.now()+((j.expires_in||3600)*1000), user:u };
+    localStorage.setItem("taskfield.session", JSON.stringify(sess));
+  }
+  function clearSession(){ sess=null; localStorage.removeItem("taskfield.session"); }
+  function ensureToken(){
+    if(!sess) return Promise.resolve(null);
+    if(Date.now() < sess.expires_at-60000) return Promise.resolve(sess.access_token);
+    return fetch(SB_URL+"/auth/v1/token?grant_type=refresh_token",{method:"POST",headers:{apikey:SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({refresh_token:sess.refresh_token})})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(j){ if(j&&j.access_token){ setSession(j); return sess.access_token; } clearSession(); updateSyncUI(); return null; })
+      .catch(function(){ return sess?sess.access_token:null; });
+  }
+  function sbFetch(path, opts){
+    opts=opts||{};
+    return ensureToken().then(function(tok){
+      opts.headers=Object.assign({ apikey:SB_KEY, Authorization:"Bearer "+(tok||SB_KEY) }, opts.headers||{});
+      return fetch(SB_URL+path, opts);
+    });
+  }
+  function collectData(){ return { tasks:state.tasks, custom:state.custom, bills:state.bills, billpaid:state.billpaid, spend:state.spend, pin:localStorage.getItem(LS.pin)||null }; }
+  function persistAll(){
+    localStorage.setItem(LS.tasks, JSON.stringify(state.tasks));
+    if(state.custom) localStorage.setItem(LS.custom, JSON.stringify(state.custom));
+    localStorage.setItem(LS.bills, JSON.stringify(state.bills));
+    localStorage.setItem(LS.billpaid, JSON.stringify(state.billpaid));
+    localStorage.setItem(LS.spend, JSON.stringify(state.spend));
+    localStorage.setItem("taskfield.updatedAt", String(state.updatedAt));
+  }
+  function pushState(){
+    if(!sess) return Promise.resolve();
+    setSyncStatus("syncing");
+    var body=[{ user_id:sess.user.id, updated_at:new Date(state.updatedAt||Date.now()).toISOString(), data:collectData() }];
+    return sbFetch("/rest/v1/user_state?on_conflict=user_id",{ method:"POST", headers:{ "Content-Type":"application/json", Prefer:"resolution=merge-duplicates,return=minimal" }, body:JSON.stringify(body) })
+      .then(function(r){ if(r.ok){ lastSync=Date.now(); setSyncStatus("synced"); } else { setSyncStatus("error"); } })
+      .catch(function(){ setSyncStatus("offline"); });
+  }
+  function applyRemote(row){
+    var d=row.data||{};
+    state.tasks=Array.isArray(d.tasks)?d.tasks:[];
+    if(d.custom) state.custom=d.custom;
+    state.bills=Array.isArray(d.bills)?d.bills:[];
+    state.billpaid=(d.billpaid&&typeof d.billpaid==="object")?d.billpaid:{};
+    state.spend=Array.isArray(d.spend)?d.spend:[];
+    if(d.pin) localStorage.setItem(LS.pin, d.pin);
+    state.updatedAt=Date.parse(row.updated_at)||Date.now();
+    persistAll(); lastSync=Date.now(); setSyncStatus("synced"); render();
+  }
+  function mergeRemote(d){
+    var have={}; state.tasks.forEach(function(t){have[t.id]=1;});
+    (d.tasks||[]).forEach(function(t){ if(t&&t.id&&!have[t.id]) state.tasks.push(t); });
+    var bh={}; state.bills.forEach(function(b){bh[b.id]=1;});
+    (d.bills||[]).forEach(function(b){ if(b&&b.id&&!bh[b.id]) state.bills.push(b); });
+    var sh={}; state.spend.forEach(function(e){sh[e.id]=1;});
+    (d.spend||[]).forEach(function(e){ if(e&&e.id&&!sh[e.id]) state.spend.push(e); });
+    if(d.billpaid) Object.keys(d.billpaid).forEach(function(ym){ state.billpaid[ym]=Object.assign(state.billpaid[ym]||{}, d.billpaid[ym]); });
+    if(d.custom && !state.custom) state.custom=d.custom;
+    if(d.pin && !localStorage.getItem(LS.pin)) localStorage.setItem(LS.pin, d.pin);
+  }
+  function pullState(){
+    if(!sess) return Promise.resolve();
+    return sbFetch("/rest/v1/user_state?select=data,updated_at&user_id=eq."+sess.user.id, {})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(rows){
+        if(!rows){ setSyncStatus("error"); return; }
+        var row=rows[0];
+        if(!row){ localStorage.setItem("taskfield.linked","1"); if(!state.updatedAt){ state.updatedAt=Date.now(); localStorage.setItem("taskfield.updatedAt",String(state.updatedAt)); } return pushState(); }
+        if(!localStorage.getItem("taskfield.linked")){
+          mergeRemote(row.data||{}); localStorage.setItem("taskfield.linked","1"); state.updatedAt=Date.now(); persistAll(); render(); return pushState();
+        }
+        var remoteMs=Date.parse(row.updated_at)||0;
+        if(remoteMs > (state.updatedAt||0)) applyRemote(row);
+        else if((state.updatedAt||0) > remoteMs) pushState();
+        else setSyncStatus("synced");
+      })
+      .catch(function(){ setSyncStatus("offline"); });
+  }
+  function syncNow(){ return pullState(); }
+  function signIn(email, pw){
+    return fetch(SB_URL+"/auth/v1/token?grant_type=password",{method:"POST",headers:{apikey:SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({email:email,password:pw})})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(res){ if(res.ok && res.j.access_token){ setSession(res.j); updateSyncUI(); pullState(); return {ok:true}; } return {ok:false, msg:(res.j.error_description||res.j.msg||res.j.message||"Sign-in failed")}; })
+      .catch(function(){ return {ok:false, msg:"Network error — check connection"}; });
+  }
+  function signUp(email, pw){
+    return fetch(SB_URL+"/auth/v1/signup",{method:"POST",headers:{apikey:SB_KEY,"Content-Type":"application/json"},body:JSON.stringify({email:email,password:pw})})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+      .then(function(res){
+        if(!res.ok) return {ok:false, msg:(res.j.error_description||res.j.msg||res.j.message||"Sign-up failed")};
+        if(res.j.access_token){ setSession(res.j); updateSyncUI(); pullState(); return {ok:true}; }
+        return {ok:true, confirm:true};
+      })
+      .catch(function(){ return {ok:false, msg:"Network error — check connection"}; });
+  }
+  function signOut(){ clearSession(); localStorage.removeItem("taskfield.linked"); setSyncStatus("off"); updateSyncUI(); toast("Signed out — local data kept"); }
+
+  function setSyncStatus(s){ syncState=s; updateSyncBtn(); if($("syncModal").classList.contains("open")) renderSyncModal(); }
+  function updateSyncBtn(){
+    var b=$("syncBtn"); if(!b) return;
+    b.classList.remove("s-on","s-off","s-err");
+    if(!sess){ b.classList.add("s-off"); b.title="Cloud sync: off"; }
+    else if(syncState==="offline"||syncState==="error"){ b.classList.add("s-err"); b.title="Cloud sync: offline"; }
+    else { b.classList.add("s-on"); b.title="Cloud sync: on"; }
+  }
+  function updateSyncUI(){ updateSyncBtn(); if($("syncModal").classList.contains("open")) renderSyncModal(); }
+  function openSyncModal(){ renderSyncModal(); $("syncModal").classList.add("open"); }
+  function closeSyncModal(){ $("syncModal").classList.remove("open"); }
+  function renderSyncModal(){
+    var box=$("syncBody");
+    if(sess){
+      var when=lastSync?new Date(lastSync).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}):"—";
+      var stat=syncState==="synced"?"All changes synced":syncState==="syncing"?"Syncing…":(syncState==="offline"||syncState==="error")?"Offline — will retry":"Ready";
+      box.innerHTML='<div class="sync-signed"><div class="sync-email">'+esc(sess.user.email||"Signed in")+'</div><div class="sync-stat">'+stat+' · last '+when+'</div></div>'
+        +'<button class="btn primary" id="syncNowBtn" style="width:100%;justify-content:center">Sync now</button>'
+        +'<button class="btn ghost" id="signOutBtn" style="width:100%;justify-content:center;margin-top:9px">Sign out</button>'
+        +'<p class="sync-note">Your tasks, bills and spending sync to your account across devices. Sign in with the same account on another phone to see the same data.</p>';
+      $("syncNowBtn").onclick=function(){ syncNow(); toast("Syncing…"); };
+      $("signOutBtn").onclick=function(){ signOut(); };
+    } else {
+      box.innerHTML='<input id="syEmail" type="email" autocomplete="username" placeholder="Email" inputmode="email">'
+        +'<input id="syPw" type="password" autocomplete="current-password" placeholder="Password (min 6 characters)">'
+        +'<div class="gate-err" id="syErr"></div>'
+        +'<button class="btn primary" id="syInBtn" style="width:100%;justify-content:center">Sign in</button>'
+        +'<button class="btn ghost" id="syUpBtn" style="width:100%;justify-content:center;margin-top:9px">Create account</button>'
+        +'<p class="sync-note">Use the same account on each phone to sync. Your data (including bills &amp; spending) is stored in your Supabase project — not on your device only.</p>';
+      var em=$("syEmail"), pw=$("syPw"), err=$("syErr");
+      function busy(b){ $("syInBtn").disabled=b; $("syUpBtn").disabled=b; }
+      $("syInBtn").onclick=function(){ err.style.color=""; err.textContent=""; if(!em.value||!pw.value){err.textContent="Enter your email and password.";return;} busy(true); signIn(em.value.trim(), pw.value).then(function(r){ busy(false); if(r.ok){ renderSyncModal(); toast("Signed in — syncing"); } else err.textContent=r.msg; }); };
+      $("syUpBtn").onclick=function(){ err.style.color=""; err.textContent=""; if(!em.value||pw.value.length<6){err.textContent="Enter an email and a 6+ character password.";return;} busy(true); signUp(em.value.trim(), pw.value).then(function(r){ busy(false); if(r.ok&&r.confirm){ err.style.color="var(--muted)"; err.textContent="Account created — check your email to confirm, then Sign in."; } else if(r.ok){ renderSyncModal(); toast("Account ready — syncing"); } else err.textContent=r.msg; }); };
+      pw.addEventListener("keydown",function(e){ if(e.key==="Enter") $("syInBtn").click(); });
+    }
+  }
+  $("syncBtn").addEventListener("click", openSyncModal);
+  $("syncClose").addEventListener("click", closeSyncModal);
+  $("syncModal").addEventListener("click", function(e){ if(e.target===$("syncModal")) closeSyncModal(); });
 
   /* ---------- Boot ---------- */
   applyTheme();
+  updateSyncBtn();
   if(state.role){ mount(); } else { openPicker(); }
+  if(sess){ pullState(); }
+  setInterval(function(){ if(sess && document.visibilityState==="visible") pullState(); }, 25000);
+  document.addEventListener("visibilitychange", function(){ if(sess && document.visibilityState==="visible") pullState(); });
 })();
 </script>
 <script>
