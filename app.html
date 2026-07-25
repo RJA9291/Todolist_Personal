@@ -284,6 +284,13 @@
   .sync-note{font-size:12px; color:var(--muted); margin:14px 0 0; line-height:1.5}
   .sync-signed .sync-email{font-weight:700; font-size:15px}
   .sync-signed .sync-stat{font-size:12.5px; color:var(--muted); margin:3px 0 16px}
+  .cf-list{display:flex; flex-direction:column; gap:6px; max-height:46vh; overflow:auto}
+  .cf-item{display:flex; align-items:center; gap:10px; padding:9px 11px; border:1px solid var(--border); border-radius:9px; background:var(--surface-2); cursor:pointer}
+  .cf-item input{width:18px; height:18px; flex:none; accent-color:var(--accent)}
+  .cf-nm{flex:1; font-size:14px; font-weight:600}
+  .cf-amt{font-size:13px; color:var(--muted)}
+  .cf-item.dup{opacity:.6; cursor:default}
+  .cf-tag{font-size:11px; color:var(--prog); font-weight:600; margin-left:6px}
 
   /* ---------- Sub-tasks, progress, remark ---------- */
   .sub-editor{display:flex; flex-direction:column; gap:7px}
@@ -508,6 +515,13 @@
   </div>
 </div>
 
+<div class="overlay" id="cfModal" role="dialog" aria-modal="true" aria-labelledby="cfTitle">
+  <div class="gate-card sync-card">
+    <div class="sync-head"><h2 id="cfTitle">Carry forward bills</h2><button class="icon-btn" id="cfClose" aria-label="Close">✕</button></div>
+    <div id="cfBody"></div>
+  </div>
+</div>
+
 <div class="lightbox" id="lightbox"><img id="lightboxImg" alt="Progress photo"><button class="lightbox-close" id="lightboxClose" aria-label="Close">✕</button></div>
 
 <div class="toast" id="toast"></div>
@@ -516,14 +530,15 @@
 (function(){
   "use strict";
   var LS = {role:"taskfield.role", custom:"taskfield.custom", tasks:"taskfield.tasks", theme:"taskfield.theme", seeded:"taskfield.seeded",
-            pin:"taskfield.pin", bills:"taskfield.bills", billpaid:"taskfield.billpaid", spend:"taskfield.spend"};
+            pin:"taskfield.pin", bills:"taskfield.bills", billpaid:"taskfield.billpaid", billmonths:"taskfield.billmonths", spend:"taskfield.spend"};
   var session = {unlocked:false};
   var ICON = {
     plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" style="width:16px;height:16px"><path d="M12 5v14M5 12h14"/></svg>',
     check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg>',
     edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
     trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>',
-    lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
+    lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+    repeat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>'
   };
   var STATUS = {todo:"To do", prog:"In progress", done:"Completed"};
   var uid = function(){ return (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : "t"+Date.now()+Math.random().toString(36).slice(2,7); };
@@ -587,6 +602,7 @@
     ym: (function(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); })(),
     bills: JSON.parse(localStorage.getItem(LS.bills) || "[]"),
     billpaid: JSON.parse(localStorage.getItem(LS.billpaid) || "{}"),
+    billmonths: JSON.parse(localStorage.getItem(LS.billmonths) || "{}"),
     spend: JSON.parse(localStorage.getItem(LS.spend) || "[]")
   };
 
@@ -975,8 +991,22 @@
   }
   function saveBills(){ localStorage.setItem(LS.bills, JSON.stringify(state.bills)); markDirty(); }
   function saveBillpaid(){ localStorage.setItem(LS.billpaid, JSON.stringify(state.billpaid)); markDirty(); }
+  function saveBillmonths(){ localStorage.setItem(LS.billmonths, JSON.stringify(state.billmonths)); markDirty(); }
+  function monthBills(ym){ if(!state.billmonths[ym]) state.billmonths[ym]=[]; return state.billmonths[ym]; }
+  function prevMonthWithBills(ym){ var m=ym; for(var i=0;i<24;i++){ m=shiftYM(m,-1); if((state.billmonths[m]||[]).length) return m; } return null; }
+  // One-time: convert the old single recurring bill list into per-month lists.
+  function migrateBills(){
+    if(Object.keys(state.billmonths).length) return;
+    if(!(state.bills && state.bills.length)) return;
+    var months={}; Object.keys(state.billpaid||{}).forEach(function(m){ months[m]=1; }); months[state.ym]=1;
+    Object.keys(months).forEach(function(m){
+      var paid=state.billpaid[m]||{};
+      state.billmonths[m]=state.bills.map(function(b){ return {id:uid(), name:b.name, amount:Number(b.amount)||0, account:b.account||"", category:b.category||"", note:b.note||"", paid:!!paid[b.id]}; });
+    });
+    localStorage.setItem(LS.billmonths, JSON.stringify(state.billmonths));
+  }
   function saveSpend(){ localStorage.setItem(LS.spend, JSON.stringify(state.spend)); markDirty(); }
-  function billById(id){ return state.bills.find(function(b){ return b.id===id; }); }
+  function billById(id){ return monthBills(state.ym).find(function(b){ return b.id===id; }); }
 
   /* ---------- Passcode (lock only, not encryption) ---------- */
   function pinIsSet(){ return !!localStorage.getItem(LS.pin); }
@@ -1069,22 +1099,14 @@
       var name=$("bName").value.trim(); if(!name){ $("bName").focus(); return; }
       var data={name:name, amount:parseFloat($("bAmt").value)||0, account:$("bAcc").value.trim(), category:$("bCat").value.trim(), note:$("bNote").value.trim()};
       if(editBill.id){ Object.assign(billById(editBill.id), data); toast("Bill updated"); }
-      else { state.bills.push(Object.assign({id:uid()}, data)); toast("Bill added"); }
-      saveBills(); editBill={open:false,id:null}; render();
+      else { monthBills(state.ym).push(Object.assign({id:uid(), paid:false}, data)); toast("Bill added"); }
+      saveBillmonths(); editBill={open:false,id:null}; render();
     };
     $("bName").focus();
   }
   function openBillComposer(b){ editBill={open:true, id:b?b.id:null}; render(); }
-  function toggleBillPaid(id){
-    var ym=state.ym; if(!state.billpaid[ym]) state.billpaid[ym]={};
-    if(state.billpaid[ym][id]) delete state.billpaid[ym][id]; else state.billpaid[ym][id]=1;
-    saveBillpaid(); render();
-  }
-  function delBill(id){
-    state.bills=state.bills.filter(function(b){return b.id!==id;});
-    Object.keys(state.billpaid).forEach(function(ym){ if(state.billpaid[ym]) delete state.billpaid[ym][id]; });
-    saveBills(); saveBillpaid(); render(); toast("Bill deleted");
-  }
+  function toggleBillPaid(id){ var b=billById(id); if(b){ b.paid=!b.paid; saveBillmonths(); render(); } }
+  function delBill(id){ state.billmonths[state.ym]=monthBills(state.ym).filter(function(b){return b.id!==id;}); saveBillmonths(); render(); toast("Bill deleted"); }
   function billRowHTML(b, isPaid){
     return '<div class="task bill '+(isPaid?"s-done":"s-todo")+'" data-bill="'+b.id+'">'
       +'<button class="check billchk" title="'+(isPaid?"Mark unpaid":"Mark paid")+'" aria-label="Toggle paid">'+ICON.check+'</button>'
@@ -1097,32 +1119,61 @@
       +'<button class="mini billdel del" title="Delete" aria-label="Delete">'+ICON.trash+'</button></div></div></div>';
   }
   function renderBills(){
-    var board=$("board"), ym=state.ym, paid=state.billpaid[ym]||{}, bills=state.bills;
+    var board=$("board"), ym=state.ym, bills=monthBills(ym);
     var total=bills.reduce(function(s,b){return s+(Number(b.amount)||0);},0);
-    var paidSum=bills.reduce(function(s,b){return s+(paid[b.id]?(Number(b.amount)||0):0);},0);
-    var paidCount=bills.filter(function(b){return paid[b.id];}).length;
+    var paidSum=bills.reduce(function(s,b){return s+(b.paid?(Number(b.amount)||0):0);},0);
+    var paidCount=bills.filter(function(b){return b.paid;}).length;
     var pct=bills.length?Math.round(paidCount/bills.length*100):0;
+    var src=prevMonthWithBills(ym);
+    var cfBtn = src?'<button class="btn ghost" id="cfBtn" title="Repeat bills from a previous month">'+ICON.repeat+'Carry forward</button>':'';
     var html='<div class="sec-head"><div class="month-switch"><button id="ymPrev" aria-label="Previous month">‹</button><span class="ym tnum">'+ymLabel(ym)+'</span><button id="ymNext" aria-label="Next month">›</button></div>'
-      +'<button class="btn primary" id="addBill">'+ICON.plus+'Add bill</button></div>'
+      +'<div style="display:flex; gap:8px; flex-wrap:wrap">'+cfBtn+'<button class="btn primary" id="addBill">'+ICON.plus+'Add bill</button></div></div>'
       +'<div class="fin-summary">'
       +'<div class="fin-card"><div class="k">Total this month</div><div class="v tnum">'+money(total)+'</div></div>'
       +'<div class="fin-card ok"><div class="k">Paid</div><div class="v tnum">'+money(paidSum)+'</div></div>'
       +'<div class="fin-card warn"><div class="k">Remaining</div><div class="v tnum">'+money(total-paidSum)+'</div></div>'
       +'<div class="fin-card"><div class="k tnum">'+paidCount+' / '+bills.length+' paid</div><div class="bar"><span style="width:'+pct+'%"></span></div></div>'
       +'</div>'+billComposerHTML();
-    if(!bills.length){ html+='<div class="empty"><h3>No bills yet</h3><p>Add your recurring monthly bills — rent, utilities, loans, subscriptions — then tick them off as you pay each month.</p></div>'; }
-    else { html+='<div class="cards">'+bills.map(function(b){ return billRowHTML(b, !!paid[b.id]); }).join("")+'</div>'; }
+    if(!bills.length){
+      html+='<div class="empty"><h3>No bills for '+esc(ymLabel(ym))+'</h3><p>Add a bill, or carry forward the ones from a previous month.</p>'
+        +'<div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:4px">'
+        +(src?'<button class="btn primary" id="emCf">Carry forward from '+esc(ymLabel(src))+'</button>':'')
+        +'<button class="btn ghost" id="emAddBill">Add a bill</button></div></div>';
+    } else { html+='<div class="cards">'+bills.map(function(b){ return billRowHTML(b, !!b.paid); }).join("")+'</div>'; }
     board.innerHTML=html;
     $("ymPrev").onclick=function(){ state.ym=shiftYM(ym,-1); render(); };
     $("ymNext").onclick=function(){ state.ym=shiftYM(ym,1); render(); };
     $("addBill").onclick=function(){ openBillComposer(null); };
+    if($("cfBtn")) $("cfBtn").onclick=openCarryForward;
+    if($("emCf")) $("emCf").onclick=openCarryForward;
+    if($("emAddBill")) $("emAddBill").onclick=function(){ openBillComposer(null); };
     wireBillComposer();
     board.querySelectorAll("[data-bill]").forEach(function(row){
       var id=row.getAttribute("data-bill");
       row.querySelector(".billchk").onclick=function(){ toggleBillPaid(id); };
       row.querySelector(".billedit").onclick=function(){ openBillComposer(billById(id)); };
-      row.querySelector(".billdel").onclick=function(){ if(confirm("Delete this bill for good?")) delBill(id); };
+      row.querySelector(".billdel").onclick=function(){ if(confirm("Delete this bill for this month?")) delBill(id); };
     });
+  }
+  /* ---------- Carry forward bills ---------- */
+  var cfSource=null;
+  function openCarryForward(){ var s=prevMonthWithBills(state.ym); if(!s){ toast("No earlier month has bills to carry"); return; } cfSource=s; renderCfModal(); $("cfModal").classList.add("open"); }
+  function closeCf(){ $("cfModal").classList.remove("open"); }
+  function renderCfModal(){
+    var src=cfSource, srcBills=monthBills(src), cur=monthBills(state.ym), existing={};
+    cur.forEach(function(b){ existing[(b.name||"").toLowerCase()]=1; });
+    var body=$("cfBody");
+    body.innerHTML='<p class="sync-note" style="margin:0 0 12px">Copy bills from <b>'+esc(ymLabel(src))+'</b> into <b>'+esc(ymLabel(state.ym))+'</b>. Untick any you don’t want to bring over.</p>'
+      +'<div class="cf-list">'+srcBills.map(function(b){ var dup=existing[(b.name||"").toLowerCase()];
+          return '<label class="cf-item'+(dup?" dup":"")+'"><input type="checkbox" data-cid="'+b.id+'"'+(dup?" disabled":" checked")+'><span class="cf-nm">'+esc(b.name)+(dup?' <span class="cf-tag">already added</span>':'')+'</span><span class="cf-amt tnum">'+money(b.amount)+'</span></label>'; }).join("")+'</div>'
+      +'<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:14px"><button class="btn ghost" id="cfCancelBtn">Cancel</button><button class="btn primary" id="cfConfirm">Carry forward</button></div>';
+    $("cfCancelBtn").onclick=closeCf;
+    $("cfConfirm").onclick=function(){
+      var picked=[].slice.call(body.querySelectorAll("input[data-cid]:checked")).map(function(i){return i.getAttribute("data-cid");});
+      var added=0; picked.forEach(function(cid){ var b=srcBills.find(function(x){return x.id===cid;}); if(!b) return;
+        monthBills(state.ym).push({id:uid(), name:b.name, amount:Number(b.amount)||0, account:b.account||"", category:b.category||"", note:b.note||"", paid:false}); added++; });
+      saveBillmonths(); closeCf(); render(); toast(added?("Carried forward "+added+" bill"+(added>1?"s":"")):"Nothing selected");
+    };
   }
 
   /* ---------- Daily spending tracker ---------- */
@@ -1448,7 +1499,7 @@
   /* ---------- Export / Import ---------- */
   $("mExport").addEventListener("click", function(){
     $("menu").classList.remove("open");
-    var payload={app:"TaskField", version:1, exportedAt:new Date().toISOString(), custom:state.custom, tasks:state.tasks, bills:state.bills, billpaid:state.billpaid, spend:state.spend};
+    var payload={app:"TaskField", version:1, exportedAt:new Date().toISOString(), custom:state.custom, tasks:state.tasks, bills:state.bills, billpaid:state.billpaid, billmonths:state.billmonths, spend:state.spend};
     var blob=new Blob([JSON.stringify(payload,null,2)], {type:"application/json"});
     var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
     a.download="taskfield-backup-"+new Date().toISOString().slice(0,10)+".json"; a.click();
@@ -1470,6 +1521,8 @@
         if(!Array.isArray(data)){
           if(Array.isArray(data.bills)){ var bh={}; state.bills.forEach(function(b){bh[b.id]=1;}); data.bills.forEach(function(b){ if(b&&b.name){ if(!b.id||bh[b.id]) b.id=uid(); state.bills.push(b); } }); saveBills(); }
           if(data.billpaid && typeof data.billpaid==="object"){ Object.keys(data.billpaid).forEach(function(ym){ state.billpaid[ym]=Object.assign(state.billpaid[ym]||{}, data.billpaid[ym]); }); saveBillpaid(); }
+          if(data.billmonths && typeof data.billmonths==="object"){ Object.keys(data.billmonths).forEach(function(ym){ var cur=state.billmonths[ym]||(state.billmonths[ym]=[]); var have={}; cur.forEach(function(b){have[b.id]=1;}); (data.billmonths[ym]||[]).forEach(function(b){ if(b&&b.name){ if(!b.id||have[b.id]) b.id=uid(); cur.push(b); } }); }); saveBillmonths(); }
+          migrateBills();
           if(Array.isArray(data.spend)){ var sh={}; state.spend.forEach(function(e){sh[e.id]=1;}); data.spend.forEach(function(e){ if(e&&e.amount!=null){ if(!e.id||sh[e.id]) e.id=uid(); state.spend.push(e); } }); saveSpend(); }
         }
         save(); render(); toast("Imported "+added+" task"+(added!==1?"s":""));
@@ -1480,7 +1533,7 @@
 
   /* ---------- Keyboard ---------- */
   document.addEventListener("keydown", function(e){
-    if(e.key==="Escape"){ $("menu").classList.remove("open"); if($("lightbox").classList.contains("open")){ closeLightbox(); return; } if($("syncModal").classList.contains("open")) closeSyncModal(); if($("composer").classList.contains("open")) closeComposer(); }
+    if(e.key==="Escape"){ $("menu").classList.remove("open"); if($("lightbox").classList.contains("open")){ closeLightbox(); return; } if($("cfModal").classList.contains("open")){ closeCf(); return; } if($("syncModal").classList.contains("open")) closeSyncModal(); if($("composer").classList.contains("open")) closeComposer(); }
     if((e.key==="n"||e.key==="N") && !/input|textarea|select/i.test(e.target.tagName) && !$("overlay").classList.contains("open") && !$("syncModal").classList.contains("open")){ e.preventDefault(); openComposer(null); }
   });
 
@@ -1515,12 +1568,13 @@
       return fetch(SB_URL+path, opts);
     });
   }
-  function collectData(){ return { tasks:state.tasks, custom:state.custom, bills:state.bills, billpaid:state.billpaid, spend:state.spend, pin:localStorage.getItem(LS.pin)||null }; }
+  function collectData(){ return { tasks:state.tasks, custom:state.custom, bills:state.bills, billpaid:state.billpaid, billmonths:state.billmonths, spend:state.spend, pin:localStorage.getItem(LS.pin)||null }; }
   function persistAll(){
     localStorage.setItem(LS.tasks, JSON.stringify(state.tasks));
     if(state.custom) localStorage.setItem(LS.custom, JSON.stringify(state.custom));
     localStorage.setItem(LS.bills, JSON.stringify(state.bills));
     localStorage.setItem(LS.billpaid, JSON.stringify(state.billpaid));
+    localStorage.setItem(LS.billmonths, JSON.stringify(state.billmonths));
     localStorage.setItem(LS.spend, JSON.stringify(state.spend));
     localStorage.setItem("taskfield.updatedAt", String(state.updatedAt));
   }
@@ -1538,8 +1592,10 @@
     if(d.custom) state.custom=d.custom;
     state.bills=Array.isArray(d.bills)?d.bills:[];
     state.billpaid=(d.billpaid&&typeof d.billpaid==="object")?d.billpaid:{};
+    state.billmonths=(d.billmonths&&typeof d.billmonths==="object")?d.billmonths:{};
     state.spend=Array.isArray(d.spend)?d.spend:[];
     if(d.pin) localStorage.setItem(LS.pin, d.pin);
+    migrateBills();
     state.updatedAt=Date.parse(row.updated_at)||Date.now();
     persistAll(); lastSync=Date.now(); setSyncStatus("synced"); render();
   }
@@ -1551,6 +1607,8 @@
     var sh={}; state.spend.forEach(function(e){sh[e.id]=1;});
     (d.spend||[]).forEach(function(e){ if(e&&e.id&&!sh[e.id]) state.spend.push(e); });
     if(d.billpaid) Object.keys(d.billpaid).forEach(function(ym){ state.billpaid[ym]=Object.assign(state.billpaid[ym]||{}, d.billpaid[ym]); });
+    if(d.billmonths) Object.keys(d.billmonths).forEach(function(ym){ var cur=state.billmonths[ym]||(state.billmonths[ym]=[]); var have={}; cur.forEach(function(b){have[b.id]=1;}); (d.billmonths[ym]||[]).forEach(function(b){ if(b&&b.id&&!have[b.id]) cur.push(b); }); });
+    migrateBills();
     if(d.custom && !state.custom) state.custom=d.custom;
     if(d.pin && !localStorage.getItem(LS.pin)) localStorage.setItem(LS.pin, d.pin);
   }
@@ -1632,8 +1690,11 @@
   $("syncModal").addEventListener("click", function(e){ if(e.target===$("syncModal")) closeSyncModal(); });
 
   /* ---------- Boot ---------- */
-  var APP_VER="v12";
+  var APP_VER="v13";
   if($("menuVer")) $("menuVer").textContent="TaskField "+APP_VER;
+  $("cfClose").addEventListener("click", closeCf);
+  $("cfModal").addEventListener("click", function(e){ if(e.target===$("cfModal")) closeCf(); });
+  migrateBills();
   applyTheme();
   updateSyncBtn();
   if(state.role){ mount(); } else { openPicker(); }

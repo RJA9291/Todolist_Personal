@@ -1,7 +1,7 @@
 /* TaskField service worker — offline support.
    Network-first for navigations (so app updates show), cache-first for assets.
    Bump CACHE when assets change so returning visitors get fresh files. */
-const CACHE = "taskfield-v12";
+const CACHE = "taskfield-v13";
 const ASSETS = [
   "./",
   "./index.html",
