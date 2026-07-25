@@ -391,6 +391,8 @@
   .g-bar.s-todo{background:var(--todo-weak)} .g-bar.s-todo .g-fill{background:var(--todo); opacity:.5}
   .g-bar.s-prog{background:var(--prog-weak)} .g-bar.s-prog .g-fill{background:var(--prog); opacity:.55}
   .g-bar.s-done{background:var(--done-weak)} .g-bar.s-done .g-fill{background:var(--done); opacity:.55}
+  .g-bar.actual{background:var(--done-weak)} .g-bar.actual .g-fill{background:var(--done); opacity:.85}
+  .g-bar.actual.milestone{background:var(--done)}
   .g-bar.milestone{width:14px; height:14px; border-radius:4px; transform:translateY(-50%) rotate(45deg)}
   .g-bar.milestone .g-fill,.g-bar.milestone .g-blabel{display:none}
   .g-unsched{font-size:12px; color:var(--muted); padding:10px 13px; border-top:1px solid var(--border); background:var(--surface-2)}
@@ -406,7 +408,7 @@
   .g-legend{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); flex-wrap:wrap}
   .g-legend .lg{width:20px; height:11px; border-radius:4px}
   .g-legend .lg-plan{background:transparent; border:1.5px dashed var(--faint)}
-  .g-legend .lg-actual{background:var(--prog)}
+  .g-legend .lg-actual{background:var(--done)}
   .g-row.g-2bar .g-track{height:44px}
   .g-bar.stacked{height:11px}
   .g-bar.plan{background:transparent; border:1.5px dashed var(--faint)}
@@ -1286,7 +1288,7 @@
       g.fillStyle=r.isTask?C.text:C.muted; g.font=(r.isTask?"600 13px ":"400 12px ")+FF;
       var pad=PAD+r.depth*13, prefix=r.depth?(r.depth===1?"– ":"· "):"";
       g.fillText(clip(prefix+r.title, labelW-(pad-PAD)-10), pad, y+h/2);
-      var col=sCol(r.status), two=r.bars.length===2;
+      var col={b:C.doneW,f:C.done}, two=r.bars.length===2;
       r.bars.forEach(function(bar, bi){
         var offDays=Math.round((floorDayMs(bar.s.getTime())-startMs)/DAY), bx=chartX+offDays*pxDay, isPlan=bar.kind==="plan";
         var bh=two?9:(r.isTask?18:14), by=two?(bi===0?y+6:y+6+bh+3):y+(h-bh)/2;
@@ -1310,7 +1312,7 @@
     if(rows.some(function(r){return r.bars.length===2;}) && W>440){ var ly=rowsBottom+footerH/2, lx=W-PAD-180;
       g.strokeStyle=C.faint; g.setLineDash([4,3]); g.lineWidth=1.4; rr(lx,ly-5,24,10,3); g.stroke(); g.setLineDash([]); g.lineWidth=1;
       g.fillStyle=C.muted; g.font="400 11px "+FF; g.fillText("Planned", lx+30, ly);
-      var lx2=lx+92; g.fillStyle=C.prog; rr(lx2,ly-5,24,10,3); g.fill(); g.fillStyle=C.muted; g.fillText("Actual", lx2+30, ly); }
+      var lx2=lx+92; g.fillStyle=C.done; rr(lx2,ly-5,24,10,3); g.fill(); g.fillStyle=C.muted; g.fillText("Actual", lx2+30, ly); }
     cv.toBlob(function(blob){ if(!blob){ toast("Couldn't create image"); return; } var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
       a.download="taskfield-gantt-"+def.name.replace(/[^a-z0-9]+/gi,"-").toLowerCase()+"-"+new Date().toISOString().slice(0,10)+".png"; a.click();
       setTimeout(function(){ URL.revokeObjectURL(a.href); },1500); toast("Gantt image saved"); }, "image/png");
@@ -1357,7 +1359,7 @@
       var barHtml="", twoStack=x.bars.length===2;
       x.bars.forEach(function(bar, bi){
         var offDays=Math.round((floorDayMs(bar.s.getTime())-startMs)/DAY), left=offDays*pxDay;
-        var isPlan=bar.kind==="plan", cls="g-bar "+(isPlan?"plan":("s-"+x.status)), tid=isPlan?"":(' data-tid="'+x.owner+'"'), topStyle="";
+        var isPlan=bar.kind==="plan", cls="g-bar "+(isPlan?"plan":"actual"), tid=isPlan?"":(' data-tid="'+x.owner+'"'), topStyle="";
         if(twoStack){ cls+=" stacked"; topStyle=(bi===0?"top:7px;":"top:23px;")+"transform:none;"; }
         var kindTip=isPlan?"planned":(bar.kind==="actual"?"actual":""), ttl=esc(x.title)+(kindTip?(" · "+kindTip):"")+" · "+x.progress+"%";
         if(bar.ms){
@@ -1651,7 +1653,7 @@
   $("syncModal").addEventListener("click", function(e){ if(e.target===$("syncModal")) closeSyncModal(); });
 
   /* ---------- Boot ---------- */
-  var APP_VER="v11";
+  var APP_VER="v12";
   if($("menuVer")) $("menuVer").textContent="TaskField "+APP_VER;
   applyTheme();
   updateSyncBtn();
