@@ -43,8 +43,20 @@ cat "$SRC"
 cat <<'TAIL'
 <script>
 if ('serviceWorker' in navigator) {
+  var __refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (__refreshing) return; __refreshing = true; location.reload();
+  });
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('./sw.js').catch(function () {});
+    navigator.serviceWorker.register('./sw.js').then(function (reg) {
+      reg.update();
+      setInterval(function () { reg.update(); }, 30 * 60 * 1000);
+    }).catch(function () {});
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); });
+    }
   });
 }
 </script>

@@ -117,6 +117,7 @@
   .menu button:hover{background:var(--surface-2)}
   .menu button svg{width:16px; height:16px; color:var(--muted); flex:none}
   .menu hr{border:none; border-top:1px solid var(--border); margin:5px 4px}
+  .menu-ver{font-size:11px; color:var(--faint); text-align:center; padding:4px 0 2px}
   .menu button.danger{color:var(--pri-high)}
   .menu button.danger svg{color:var(--pri-high)}
 
@@ -465,6 +466,8 @@
         <button id="mImport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9"/><path d="M8 13l4-4 4 4"/><path d="M4 3h16"/></svg>Import backup</button>
         <hr>
         <button id="mClearDone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M6 6l1 14h10l1-14"/></svg>Clear completed</button>
+        <hr>
+        <div class="menu-ver" id="menuVer"></div>
       </div>
     </div>
     <input type="file" id="fileInput" accept="application/json,.json" class="sr">
@@ -1648,6 +1651,8 @@
   $("syncModal").addEventListener("click", function(e){ if(e.target===$("syncModal")) closeSyncModal(); });
 
   /* ---------- Boot ---------- */
+  var APP_VER="v11";
+  if($("menuVer")) $("menuVer").textContent="TaskField "+APP_VER;
   applyTheme();
   updateSyncBtn();
   if(state.role){ mount(); } else { openPicker(); }
@@ -1658,8 +1663,20 @@
 </script>
 <script>
 if ('serviceWorker' in navigator) {
+  var __refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (__refreshing) return; __refreshing = true; location.reload();
+  });
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('./sw.js').catch(function () {});
+    navigator.serviceWorker.register('./sw.js').then(function (reg) {
+      reg.update();
+      setInterval(function () { reg.update(); }, 30 * 60 * 1000);
+    }).catch(function () {});
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); });
+    }
   });
 }
 </script>
