@@ -286,9 +286,13 @@
 
   /* ---------- Sub-tasks, progress, remark ---------- */
   .sub-editor{display:flex; flex-direction:column; gap:7px}
-  .sub-row{display:flex; align-items:center; gap:8px}
+  .sub-row{display:flex; flex-direction:column; gap:6px}
+  .sr-main{display:flex; align-items:center; gap:8px}
   .sub-row input[type=text]{flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-2)}
   .sub-row input[type=text]:focus{outline:none; border-color:var(--accent); background:var(--surface)}
+  .sr-dates{display:flex; gap:8px; padding-left:27px}
+  .sr-dates input[type=date]{flex:1; min-width:0; padding:6px 8px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); font-size:12.5px; color:var(--muted)}
+  .sr-dates input[type=date]:focus{outline:none; border-color:var(--accent); background:var(--surface); color:var(--text)}
   .sub-cb{width:19px; height:19px; border:2px solid var(--border-strong); border-radius:6px; flex:none; display:grid; place-items:center; color:transparent}
   .sub-cb.on{background:var(--done); border-color:var(--done); color:#fff}
   .sub-cb svg{width:12px; height:12px}
@@ -364,6 +368,12 @@
   .g-bar.milestone{width:14px; height:14px; border-radius:4px; transform:translateY(-50%) rotate(45deg)}
   .g-bar.milestone .g-fill,.g-bar.milestone .g-blabel{display:none}
   .g-unsched{font-size:12px; color:var(--muted); padding:10px 13px; border-top:1px solid var(--border); background:var(--surface-2)}
+  .g-row.g-sub .g-track{height:32px}
+  .g-row.g-sub .g-bar{height:15px}
+  .g-row.g-sub .g-label .nm{font-weight:500; font-size:12.5px; color:var(--muted)}
+  .g-row.g-sub .g-bar .g-blabel{font-size:10px; padding:0 5px}
+  .g-tw{color:var(--faint)}
+  .g-label.undated .nm{opacity:.75}
   @media (max-width:620px){ .seg button .hide-sm{display:none} }
 </style>
 
@@ -713,8 +723,8 @@
   function countLeaves(nodes){ var t=0,d=0; (nodes||[]).forEach(function(n){ if(isLeaf(n)){ t++; if(n.done) d++; } else { var r=countLeaves(n.children); t+=r.t; d+=r.d; } }); return {t:t,d:d}; }
   function setDoneRec(n,val){ if(isLeaf(n)){ n.done=val; } else { n.children.forEach(function(c){ setDoneRec(c,val); }); } }
   function findNode(nodes,id){ for(var i=0;i<(nodes||[]).length;i++){ if(nodes[i].id===id) return nodes[i]; var f=findNode(nodes[i].children,id); if(f) return f; } return null; }
-  function cloneSubs(nodes){ return (nodes||[]).map(function(n){ return {id:n.id, title:n.title, done:!!n.done, children:cloneSubs(n.children)}; }); }
-  function cleanSubs(nodes){ return (nodes||[]).filter(function(n){ return (n.title||"").trim(); }).map(function(n){ return {id:n.id||uid(), title:n.title.trim(), done:!!n.done, children:cleanSubs(n.children)}; }); }
+  function cloneSubs(nodes){ return (nodes||[]).map(function(n){ return {id:n.id, title:n.title, done:!!n.done, start:n.start||"", due:n.due||"", children:cloneSubs(n.children)}; }); }
+  function cleanSubs(nodes){ return (nodes||[]).filter(function(n){ return (n.title||"").trim(); }).map(function(n){ return {id:n.id||uid(), title:n.title.trim(), done:!!n.done, start:n.start||"", due:n.due||"", children:cleanSubs(n.children)}; }); }
   function taskProgress(t){
     if(t.subtasks && t.subtasks.length){ var r=countLeaves(t.subtasks); return r.t?Math.round(r.d/r.t*100):0; }
     return Number(t.progress)||0;
@@ -749,13 +759,16 @@
       if(!n.children) n.children=[];
       var done=nodeDone(n), canChild=depth<1;
       var row=document.createElement("div"); row.className="sub-row"; if(depth>0) row.style.marginLeft=(depth*20)+"px";
-      row.innerHTML='<button type="button" class="sub-cb'+(done?" on":"")+'" aria-label="Toggle done">'+ICON.check+'</button>'
+      row.innerHTML='<div class="sr-main"><button type="button" class="sub-cb'+(done?" on":"")+'" aria-label="Toggle done">'+ICON.check+'</button>'
         +'<input type="text" placeholder="'+(depth?"Sub-sub-task":"Sub-task")+'" value="'+esc(n.title)+'">'
         +(canChild?'<button type="button" class="sub-add-child" title="Add sub-sub-task" aria-label="Add sub-sub-task">+</button>':"")
-        +'<button type="button" class="sub-del" aria-label="Remove">'+ICON.trash+'</button>';
+        +'<button type="button" class="sub-del" aria-label="Remove">'+ICON.trash+'</button></div>'
+        +'<div class="sr-dates"><input type="date" class="sr-start" title="Start date" aria-label="Start date" value="'+(n.start||"")+'"><input type="date" class="sr-due" title="Due date" aria-label="Due date" value="'+(n.due||"")+'"></div>';
       row.querySelector(".sub-cb").onclick=function(){ setDoneRec(n, !nodeDone(n)); renderSubEditor(); };
-      row.querySelector("input").oninput=function(){ n.title=this.value; };
-      if(canChild) row.querySelector(".sub-add-child").onclick=function(){ n.children.push({id:uid(),title:"",done:false,children:[]}); renderSubEditor(); var ins=$("subEditor").querySelectorAll("input[type=text]"); if(ins.length) ins[ins.length-1].focus(); };
+      row.querySelector("input[type=text]").oninput=function(){ n.title=this.value; };
+      row.querySelector(".sr-start").oninput=function(){ n.start=this.value; };
+      row.querySelector(".sr-due").oninput=function(){ n.due=this.value; };
+      if(canChild) row.querySelector(".sub-add-child").onclick=function(){ n.children.push({id:uid(),title:"",done:false,start:"",due:"",children:[]}); renderSubEditor(); var ins=$("subEditor").querySelectorAll("input[type=text]"); if(ins.length) ins[ins.length-1].focus(); };
       row.querySelector(".sub-del").onclick=function(){ nodes.splice(idx,1); renderSubEditor(); };
       box.appendChild(row);
       if(n.children.length) renderSubEditorList(n.children, box, depth+1);
@@ -833,7 +846,7 @@
   $("lightboxClose").addEventListener("click", closeLightbox);
   $("lightbox").addEventListener("click", function(e){ if(e.target===$("lightbox")) closeLightbox(); });
   $("addSub").addEventListener("click", function(){
-    composerSubs.push({id:uid(), title:"", done:false, children:[]}); renderSubEditor();
+    composerSubs.push({id:uid(), title:"", done:false, start:"", due:"", children:[]}); renderSubEditor();
     var ins=$("subEditor").querySelectorAll("input[type=text]"); if(ins.length) ins[ins.length-1].focus();
   });
   $("cProg").addEventListener("input", function(){ if(!composerSubs.length) $("progVal").textContent=this.value+"%"; });
@@ -1133,21 +1146,32 @@
     if(s) return {s:s,e:s,ms:true};
     return null;
   }
+  function nodeHasDates(n){ return !!(n.start||n.due); }
+  function nodeOrDescHasDates(n){ if(nodeHasDates(n)) return true; return (n.children||n.subtasks||[]).some(nodeOrDescHasDates); }
+  function nodeProgress(n){ if(isLeaf(n)) return n.done?100:0; var r=countLeaves([n]); return r.t?Math.round(r.d/r.t*100):0; }
+  function ganttPush(out, n, depth, isTask, owner){
+    var r=ganttRange(n);
+    out.push({ n:n, depth:depth, isTask:isTask, owner:owner, title:n.title, category:isTask?(n.category||""):"",
+      s:r?r.s:null, e:r?r.e:null, ms:r?r.ms:false, dated:!!r,
+      status:isTask?n.status:(nodeDone(n)?"done":(nodeProgress(n)>0?"prog":"todo")),
+      progress:isTask?taskProgress(n):nodeProgress(n) });
+    (n.children||n.subtasks||[]).forEach(function(c){ ganttPush(out, c, depth+1, false, owner); });
+  }
   function renderGantt(){
     var board=$("board");
     var rows=[], unsched=0;
-    currentTasks().filter(passFilter).forEach(function(t){ var r=ganttRange(t); if(r) rows.push({t:t,s:r.s,e:r.e,ms:r.ms}); else unsched++; });
-    if(!rows.length){ board.innerHTML='<div class="empty"><h3>Nothing on the timeline yet</h3><p>Give a task a due date (and optionally a start date) and it appears here automatically.</p></div>'; return; }
+    currentTasks().filter(passFilter).forEach(function(t){ if(nodeOrDescHasDates(t)) ganttPush(rows, t, 0, true, t.id); else unsched++; });
+    var dated=rows.filter(function(r){return r.dated;});
+    if(!dated.length){ board.innerHTML='<div class="empty"><h3>Nothing on the timeline yet</h3><p>Give a task or a sub-task a due date — and optionally a start date — and it appears here automatically.</p></div>'; return; }
     var DAY=86400000;
-    var startMs=floorDayMs(Math.min.apply(null, rows.map(function(x){return x.s.getTime();})));
-    var endMs=floorDayMs(Math.max.apply(null, rows.map(function(x){return x.e.getTime();})));
+    var startMs=floorDayMs(Math.min.apply(null, dated.map(function(x){return x.s.getTime();})));
+    var endMs=floorDayMs(Math.max.apply(null, dated.map(function(x){return x.e.getTime();})));
     var todayMs=floorDayMs(Date.now());
     if(todayMs<startMs) startMs=todayMs; if(todayMs>endMs) endMs=todayMs;
     startMs-=DAY; endMs+=DAY;
     var totalDays=Math.round((endMs-startMs)/DAY)+1;
     var pxDay = totalDays>120?9 : totalDays>60?14 : totalDays>30?20 : 30;
-    var chartW=totalDays*pxDay, LABELW=132;
-    rows.sort(function(a,b){ return a.s-b.s || a.e-b.e; });
+    var chartW=totalDays*pxDay, LABELW=150;
 
     var months=[], dayCells="", mCur=null, mDays=0, mLabel="";
     for(var i=0;i<totalDays;i++){
@@ -1163,26 +1187,30 @@
     var todayLeft=Math.round((todayMs-startMs)/DAY)*pxDay + Math.round(pxDay/2);
 
     var html='<div class="gantt"><div class="gantt-scroll"><div class="gantt-inner" style="width:'+(LABELW+chartW)+'px">';
-    html+='<div class="g-row g-head"><div class="g-label">Task</div><div class="g-track" style="width:'+chartW+'px"><div class="g-months">'+monthCells+'</div><div class="g-days">'+dayCells+'</div></div></div>';
+    html+='<div class="g-row g-head"><div class="g-label" style="width:'+LABELW+'px">Task</div><div class="g-track" style="width:'+chartW+'px"><div class="g-months">'+monthCells+'</div><div class="g-days">'+dayCells+'</div></div></div>';
     rows.forEach(function(x){
-      var t=x.t, pct=taskProgress(t);
-      var offDays=Math.round((floorDayMs(x.s.getTime())-startMs)/DAY);
-      var spanDays=Math.round((floorDayMs(x.e.getTime())-floorDayMs(x.s.getTime()))/DAY)+1;
-      var left=offDays*pxDay, barCls="g-bar s-"+t.status, barStyle, inner="";
-      if(x.ms){ barStyle='left:'+(left+Math.round(pxDay/2)-7)+'px;'; barCls+=" milestone"; }
-      else { barStyle='left:'+(left+1)+'px; width:'+Math.max(8,spanDays*pxDay-2)+'px;'; inner='<span class="g-fill" style="width:'+pct+'%"></span><span class="g-blabel">'+pct+'%</span>'; }
-      var ttl=esc(t.title)+" · "+(t.start?("start "+t.start+" → "):"")+(t.due?("due "+t.due):(x.ms&&t.start?"":"no due"))+" · "+pct+"%";
-      html+='<div class="g-row"><div class="g-label"><span class="nm">'+esc(t.title)+'</span><span class="mt">'+esc(t.category)+'</span></div>'
-        +'<div class="g-track" style="width:'+chartW+'px; background:'+gridBg+'">'
-        +'<div class="g-today-line" style="left:'+todayLeft+'px"></div>'
-        +'<div class="'+barCls+'" style="'+barStyle+'" data-tid="'+t.id+'" title="'+ttl+'">'+inner+'</div></div></div>';
+      var rowCls="g-row"+(x.isTask?"":" g-sub");
+      var pad=12+x.depth*15;
+      var labelInner='<span class="nm">'+(x.depth?'<span class="g-tw">'+(x.depth===1?"– ":"· ")+'</span>':"")+esc(x.title)+'</span>'+(x.isTask&&x.category?'<span class="mt">'+esc(x.category)+'</span>':"");
+      var barHtml="";
+      if(x.dated){
+        var offDays=Math.round((floorDayMs(x.s.getTime())-startMs)/DAY);
+        var spanDays=Math.round((floorDayMs(x.e.getTime())-floorDayMs(x.s.getTime()))/DAY)+1;
+        var left=offDays*pxDay, barCls="g-bar s-"+x.status, barStyle, inner="";
+        if(x.ms){ barStyle='left:'+(left+Math.round(pxDay/2)-7)+'px;'; barCls+=" milestone"; }
+        else { barStyle='left:'+(left+1)+'px; width:'+Math.max(8,spanDays*pxDay-2)+'px;'; inner='<span class="g-fill" style="width:'+x.progress+'%"></span><span class="g-blabel">'+x.progress+'%</span>'; }
+        var ttl=esc(x.title)+" · "+(x.n.start?("start "+x.n.start+" → "):"")+(x.n.due?("due "+x.n.due):(x.ms&&x.n.start?"":"no due"))+" · "+x.progress+"%";
+        barHtml='<div class="'+barCls+'" style="'+barStyle+'" data-tid="'+x.owner+'" title="'+ttl+'">'+inner+'</div>';
+      }
+      html+='<div class="'+rowCls+'"><div class="g-label'+(x.dated?"":" undated")+'" style="width:'+LABELW+'px; padding-left:'+pad+'px">'+labelInner+'</div>'
+        +'<div class="g-track" style="width:'+chartW+'px; background:'+gridBg+'"><div class="g-today-line" style="left:'+todayLeft+'px"></div>'+barHtml+'</div></div>';
     });
     html+='</div></div>';
     if(unsched) html+='<div class="g-unsched">'+unsched+' task'+(unsched>1?"s":"")+' not shown — add a due date to place '+(unsched>1?"them":"it")+' on the timeline.</div>';
     html+='</div>';
     board.innerHTML=html;
     var sc=board.querySelector(".gantt-scroll"); if(sc) sc.scrollLeft=Math.max(0, todayLeft-180);
-    board.querySelectorAll(".g-bar").forEach(function(b){ b.addEventListener("click", function(){ var t=state.tasks.find(function(x){return x.id===b.getAttribute("data-tid");}); if(t) openComposer(t); }); });
+    board.querySelectorAll(".g-bar[data-tid]").forEach(function(b){ b.addEventListener("click", function(){ var t=state.tasks.find(function(x){return x.id===b.getAttribute("data-tid");}); if(t) openComposer(t); }); });
   }
 
   function renderTasks(){
