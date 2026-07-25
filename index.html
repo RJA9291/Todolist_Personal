@@ -314,6 +314,10 @@
   .sr-dates{display:flex; gap:8px; padding-left:27px}
   .sr-dates input[type=date]{flex:1; min-width:0; padding:6px 8px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); font-size:12.5px; color:var(--muted)}
   .sr-dates input[type=date]:focus{outline:none; border-color:var(--accent); background:var(--surface); color:var(--text)}
+  .sr-dates4{display:grid; grid-template-columns:1fr 1fr; gap:7px 10px; padding-left:27px}
+  .sr-dl{display:flex; flex-direction:column; gap:3px; font-size:11px; color:var(--muted); font-weight:600}
+  .sr-dl input[type=date]{padding:6px 8px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); font-size:12.5px; color:var(--muted); font-weight:400}
+  .sr-dl input[type=date]:focus{outline:none; border-color:var(--accent); background:var(--surface); color:var(--text)}
   .sub-cb{width:19px; height:19px; border:2px solid var(--border-strong); border-radius:6px; flex:none; display:grid; place-items:center; color:transparent}
   .sub-cb.on{background:var(--done); border-color:var(--done); color:#fff}
   .sub-cb svg{width:12px; height:12px}
@@ -398,6 +402,15 @@
   .g-toolbar{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; flex-wrap:wrap}
   .g-toolbar-title{font-weight:700; font-size:14px}
   .g-toolbar .btn{padding:8px 13px}
+  .g-legend{display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); flex-wrap:wrap}
+  .g-legend .lg{width:20px; height:11px; border-radius:4px}
+  .g-legend .lg-plan{background:transparent; border:1.5px dashed var(--faint)}
+  .g-legend .lg-actual{background:var(--prog)}
+  .g-row.g-2bar .g-track{height:44px}
+  .g-bar.stacked{height:11px}
+  .g-bar.plan{background:transparent; border:1.5px dashed var(--faint)}
+  .g-bar.plan .g-fill,.g-bar.plan .g-blabel{display:none}
+  .g-bar.mini{border-radius:4px}
   @media (max-width:620px){ .seg button .hide-sm{display:none} }
 </style>
 
@@ -747,8 +760,8 @@
   function countLeaves(nodes){ var t=0,d=0; (nodes||[]).forEach(function(n){ if(isLeaf(n)){ t++; if(n.done) d++; } else { var r=countLeaves(n.children); t+=r.t; d+=r.d; } }); return {t:t,d:d}; }
   function setDoneRec(n,val){ if(isLeaf(n)){ n.done=val; } else { n.children.forEach(function(c){ setDoneRec(c,val); }); } }
   function findNode(nodes,id){ for(var i=0;i<(nodes||[]).length;i++){ if(nodes[i].id===id) return nodes[i]; var f=findNode(nodes[i].children,id); if(f) return f; } return null; }
-  function cloneSubs(nodes){ return (nodes||[]).map(function(n){ return {id:n.id, title:n.title, done:!!n.done, start:n.start||"", due:n.due||"", children:cloneSubs(n.children)}; }); }
-  function cleanSubs(nodes){ return (nodes||[]).filter(function(n){ return (n.title||"").trim(); }).map(function(n){ return {id:n.id||uid(), title:n.title.trim(), done:!!n.done, start:n.start||"", due:n.due||"", children:cleanSubs(n.children)}; }); }
+  function cloneSubs(nodes){ return (nodes||[]).map(function(n){ return {id:n.id, title:n.title, done:!!n.done, start:n.start||"", due:n.due||"", planStart:n.planStart||"", planEnd:n.planEnd||"", actualStart:n.actualStart||"", actualEnd:n.actualEnd||"", children:cloneSubs(n.children)}; }); }
+  function cleanSubs(nodes){ return (nodes||[]).filter(function(n){ return (n.title||"").trim(); }).map(function(n){ return {id:n.id||uid(), title:n.title.trim(), done:!!n.done, start:n.start||"", due:n.due||"", planStart:n.planStart||"", planEnd:n.planEnd||"", actualStart:n.actualStart||"", actualEnd:n.actualEnd||"", children:cleanSubs(n.children)}; }); }
   function taskProgress(t){
     if(t.subtasks && t.subtasks.length){ var r=countLeaves(t.subtasks); return r.t?Math.round(r.d/r.t*100):0; }
     return Number(t.progress)||0;
@@ -783,16 +796,30 @@
       if(!n.children) n.children=[];
       var done=nodeDone(n), canChild=depth<1;
       var row=document.createElement("div"); row.className="sub-row"; if(depth>0) row.style.marginLeft=(depth*20)+"px";
+      var dateBlock = depth>=1
+        ? '<div class="sr-dates4">'
+            +'<label class="sr-dl">Plan start<input type="date" class="sr-ps" value="'+(n.planStart||n.start||"")+'"></label>'
+            +'<label class="sr-dl">Actual start<input type="date" class="sr-as" value="'+(n.actualStart||"")+'"></label>'
+            +'<label class="sr-dl">Plan end<input type="date" class="sr-pe" value="'+(n.planEnd||n.due||"")+'"></label>'
+            +'<label class="sr-dl">Actual end<input type="date" class="sr-ae" value="'+(n.actualEnd||"")+'"></label>'
+          +'</div>'
+        : '<div class="sr-dates"><input type="date" class="sr-start" title="Start date" aria-label="Start date" value="'+(n.start||"")+'"><input type="date" class="sr-due" title="Due date" aria-label="Due date" value="'+(n.due||"")+'"></div>';
       row.innerHTML='<div class="sr-main"><button type="button" class="sub-cb'+(done?" on":"")+'" aria-label="Toggle done">'+ICON.check+'</button>'
         +'<input type="text" placeholder="'+(depth?"Sub-sub-task":"Sub-task")+'" value="'+esc(n.title)+'">'
         +(canChild?'<button type="button" class="sub-add-child" title="Add sub-sub-task" aria-label="Add sub-sub-task">+</button>':"")
-        +'<button type="button" class="sub-del" aria-label="Remove">'+ICON.trash+'</button></div>'
-        +'<div class="sr-dates"><input type="date" class="sr-start" title="Start date" aria-label="Start date" value="'+(n.start||"")+'"><input type="date" class="sr-due" title="Due date" aria-label="Due date" value="'+(n.due||"")+'"></div>';
+        +'<button type="button" class="sub-del" aria-label="Remove">'+ICON.trash+'</button></div>'+dateBlock;
       row.querySelector(".sub-cb").onclick=function(){ setDoneRec(n, !nodeDone(n)); renderSubEditor(); };
       row.querySelector("input[type=text]").oninput=function(){ n.title=this.value; };
-      row.querySelector(".sr-start").oninput=function(){ n.start=this.value; };
-      row.querySelector(".sr-due").oninput=function(){ n.due=this.value; };
-      if(canChild) row.querySelector(".sub-add-child").onclick=function(){ n.children.push({id:uid(),title:"",done:false,start:"",due:"",children:[]}); renderSubEditor(); var ins=$("subEditor").querySelectorAll("input[type=text]"); if(ins.length) ins[ins.length-1].focus(); };
+      if(depth>=1){
+        row.querySelector(".sr-ps").oninput=function(){ n.planStart=this.value; };
+        row.querySelector(".sr-as").oninput=function(){ n.actualStart=this.value; };
+        row.querySelector(".sr-pe").oninput=function(){ n.planEnd=this.value; };
+        row.querySelector(".sr-ae").oninput=function(){ n.actualEnd=this.value; };
+      } else {
+        row.querySelector(".sr-start").oninput=function(){ n.start=this.value; };
+        row.querySelector(".sr-due").oninput=function(){ n.due=this.value; };
+      }
+      if(canChild) row.querySelector(".sub-add-child").onclick=function(){ n.children.push({id:uid(),title:"",done:false,planStart:"",planEnd:"",actualStart:"",actualEnd:"",children:[]}); renderSubEditor(); var ins=$("subEditor").querySelectorAll("input[type=text]"); if(ins.length) ins[ins.length-1].focus(); };
       row.querySelector(".sub-del").onclick=function(){ nodes.splice(idx,1); renderSubEditor(); };
       box.appendChild(row);
       if(n.children.length) renderSubEditorList(n.children, box, depth+1);
@@ -1170,13 +1197,28 @@
     if(s) return {s:s,e:s,ms:true};
     return null;
   }
-  function nodeHasDates(n){ return !!(n.start||n.due); }
-  function nodeOrDescHasDates(n){ if(nodeHasDates(n)) return true; return (n.children||n.subtasks||[]).some(nodeOrDescHasDates); }
+  function rangeFrom(ss, ee){
+    var s=parseDateLocal(ss), e=parseDateLocal(ee);
+    if(s&&e){ if(s>e){var x=s;s=e;e=x;} return {s:s,e:e,ms:false}; }
+    if(e) return {s:e,e:e,ms:true};
+    if(s) return {s:s,e:s,ms:true};
+    return null;
+  }
+  // Sub-sub-tasks (depth>=2) carry planned + actual ranges; tasks/sub-tasks carry a single range.
+  function nodeBars(n, depth){
+    if(depth>=2){
+      var out=[]; var pr=rangeFrom(n.planStart||n.start, n.planEnd||n.due); if(pr){ pr.kind="plan"; out.push(pr); }
+      var ar=rangeFrom(n.actualStart, n.actualEnd); if(ar){ ar.kind="actual"; out.push(ar); }
+      return out;
+    }
+    var r=rangeFrom(n.start, n.due); if(r){ r.kind="single"; return [r]; } return [];
+  }
+  function nodeOrDescHasDates(n, depth){ depth=depth||0; if(nodeBars(n, depth).length) return true; return (n.children||n.subtasks||[]).some(function(c){ return nodeOrDescHasDates(c, depth+1); }); }
   function nodeProgress(n){ if(isLeaf(n)) return n.done?100:0; var r=countLeaves([n]); return r.t?Math.round(r.d/r.t*100):0; }
   function ganttPush(out, n, depth, isTask, owner){
-    var r=ganttRange(n);
+    var bars=nodeBars(n, depth);
     out.push({ n:n, depth:depth, isTask:isTask, owner:owner, title:n.title, category:isTask?(n.category||""):"",
-      s:r?r.s:null, e:r?r.e:null, ms:r?r.ms:false, dated:!!r,
+      bars:bars, dated:bars.length>0,
       status:isTask?n.status:(nodeDone(n)?"done":(nodeProgress(n)>0?"prog":"todo")),
       progress:isTask?taskProgress(n):nodeProgress(n) });
     (n.children||n.subtasks||[]).forEach(function(c){ ganttPush(out, c, depth+1, false, owner); });
@@ -1188,11 +1230,11 @@
   }
   function exportGanttPNG(){
     var data=ganttCollect(), rows=data.rows, unsched=data.unsched;
-    var dated=rows.filter(function(r){return r.dated;});
-    if(!dated.length){ toast("Add a date to a task first"); return; }
+    var allBars=[]; rows.forEach(function(r){ r.bars.forEach(function(b){ allBars.push(b); }); });
+    if(!allBars.length){ toast("Add a date first"); return; }
     var DAY=86400000;
-    var startMs=floorDayMs(Math.min.apply(null,dated.map(function(x){return x.s.getTime();})));
-    var endMs=floorDayMs(Math.max.apply(null,dated.map(function(x){return x.e.getTime();})));
+    var startMs=floorDayMs(Math.min.apply(null,allBars.map(function(b){return b.s.getTime();})));
+    var endMs=floorDayMs(Math.max.apply(null,allBars.map(function(b){return b.e.getTime();})));
     var todayMs=floorDayMs(Date.now());
     if(todayMs<startMs) startMs=todayMs; if(todayMs>endMs) endMs=todayMs;
     startMs-=DAY; endMs+=DAY;
@@ -1205,7 +1247,7 @@
       todo:tk('--todo','#5b6472'), todoW:tk('--todo-weak','#eef0f3'), prog:tk('--prog','#c47f13'), progW:tk('--prog-weak','#fbf0dc'), done:tk('--done','#0f9d6a'), doneW:tk('--done-weak','#e3f6ee'), red:tk('--pri-high','#d13d3d') };
     function sCol(s){ return s==='done'?{b:C.doneW,f:C.done}:s==='prog'?{b:C.progW,f:C.prog}:{b:C.todoW,f:C.todo}; }
     var PAD=18, titleH=46, monthH=26, dayH=22, axisH=monthH+dayH, labelW=190, footerH=30;
-    function rowH(r){ return r.isTask?34:27; }
+    function rowH(r){ return r.isTask?34:(r.bars.length===2?36:27); }
     var rowsH=rows.reduce(function(a,r){return a+rowH(r);},0);
     var W=PAD*2+labelW+chartW, H=PAD*2+titleH+axisH+rowsH+footerH, scale=2;
     var cv=document.createElement('canvas'); cv.width=W*scale; cv.height=H*scale;
@@ -1241,16 +1283,31 @@
       g.fillStyle=r.isTask?C.text:C.muted; g.font=(r.isTask?"600 13px ":"400 12px ")+FF;
       var pad=PAD+r.depth*13, prefix=r.depth?(r.depth===1?"– ":"· "):"";
       g.fillText(clip(prefix+r.title, labelW-(pad-PAD)-10), pad, y+h/2);
-      if(r.dated){ var offDays=Math.round((floorDayMs(r.s.getTime())-startMs)/DAY), spanDays=Math.round((floorDayMs(r.e.getTime())-floorDayMs(r.s.getTime()))/DAY)+1;
-        var bx=chartX+offDays*pxDay, col=sCol(r.status), bh=r.isTask?18:14, by=y+(h-bh)/2;
-        if(r.ms){ var cxp=bx+pxDay/2, cyp=y+h/2, ds=7; g.fillStyle=col.f; g.beginPath(); g.moveTo(cxp,cyp-ds); g.lineTo(cxp+ds,cyp); g.lineTo(cxp,cyp+ds); g.lineTo(cxp-ds,cyp); g.closePath(); g.fill(); }
-        else { var bw=Math.max(8,spanDays*pxDay-2); g.fillStyle=col.b; rr(bx+1,by,bw,bh,5); g.fill();
-          var fw=Math.round(bw*(r.progress||0)/100); if(fw>0){ g.fillStyle=col.f; g.globalAlpha=r.status==="todo"?0.5:0.6; rr(bx+1,by,fw,bh,5); g.fill(); g.globalAlpha=1; }
-          g.fillStyle=C.text; g.font="700 10px "+FF; g.fillText(r.progress+"%", bx+7, by+bh/2); } }
+      var col=sCol(r.status), two=r.bars.length===2;
+      r.bars.forEach(function(bar, bi){
+        var offDays=Math.round((floorDayMs(bar.s.getTime())-startMs)/DAY), bx=chartX+offDays*pxDay, isPlan=bar.kind==="plan";
+        var bh=two?9:(r.isTask?18:14), by=two?(bi===0?y+6:y+6+bh+3):y+(h-bh)/2;
+        if(bar.ms){
+          if(two){ var mw=Math.max(5,pxDay-2);
+            if(isPlan){ g.strokeStyle=C.faint; g.setLineDash([3,2]); g.lineWidth=1.4; rr(bx+1,by,mw,bh,3); g.stroke(); g.setLineDash([]); g.lineWidth=1; }
+            else { g.fillStyle=col.f; rr(bx+1,by,mw,bh,3); g.fill(); }
+          } else { var cxp=bx+pxDay/2, cyp=y+h/2, ds=7; g.fillStyle=col.f; g.beginPath(); g.moveTo(cxp,cyp-ds); g.lineTo(cxp+ds,cyp); g.lineTo(cxp,cyp+ds); g.lineTo(cxp-ds,cyp); g.closePath(); g.fill(); }
+        } else {
+          var spanDays=Math.round((floorDayMs(bar.e.getTime())-floorDayMs(bar.s.getTime()))/DAY)+1, bw=Math.max(8,spanDays*pxDay-2);
+          if(isPlan){ g.strokeStyle=C.faint; g.setLineDash([4,3]); g.lineWidth=1.4; rr(bx+1,by,bw,bh,4); g.stroke(); g.setLineDash([]); g.lineWidth=1; }
+          else { g.fillStyle=col.b; rr(bx+1,by,bw,bh,two?4:5); g.fill();
+            var fw=Math.round(bw*(r.progress||0)/100); if(fw>0){ g.fillStyle=col.f; g.globalAlpha=r.status==="todo"?0.5:0.6; rr(bx+1,by,fw,bh,two?4:5); g.fill(); g.globalAlpha=1; }
+            if(!two){ g.fillStyle=C.text; g.font="700 10px "+FF; g.fillText(r.progress+"%", bx+7, by+bh/2); } }
+        }
+      });
       g.strokeStyle=C.border; g.globalAlpha=0.6; g.beginPath(); g.moveTo(PAD,y+h+0.5); g.lineTo(PAD+labelW+chartW,y+h+0.5); g.stroke(); g.globalAlpha=1;
       y+=h; });
     g.fillStyle=C.muted; g.font="400 11px "+FF;
-    g.fillText(unsched?(unsched+" task"+(unsched>1?"s":"")+" not shown (no dates)"):"All dated tasks shown", PAD, rowsBottom+footerH/2);
+    g.fillText(unsched?(unsched+" item"+(unsched>1?"s":"")+" not shown (no dates)"):"All dated items shown", PAD, rowsBottom+footerH/2);
+    if(rows.some(function(r){return r.bars.length===2;}) && W>440){ var ly=rowsBottom+footerH/2, lx=W-PAD-180;
+      g.strokeStyle=C.faint; g.setLineDash([4,3]); g.lineWidth=1.4; rr(lx,ly-5,24,10,3); g.stroke(); g.setLineDash([]); g.lineWidth=1;
+      g.fillStyle=C.muted; g.font="400 11px "+FF; g.fillText("Planned", lx+30, ly);
+      var lx2=lx+92; g.fillStyle=C.prog; rr(lx2,ly-5,24,10,3); g.fill(); g.fillStyle=C.muted; g.fillText("Actual", lx2+30, ly); }
     cv.toBlob(function(blob){ if(!blob){ toast("Couldn't create image"); return; } var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
       a.download="taskfield-gantt-"+def.name.replace(/[^a-z0-9]+/gi,"-").toLowerCase()+"-"+new Date().toISOString().slice(0,10)+".png"; a.click();
       setTimeout(function(){ URL.revokeObjectURL(a.href); },1500); toast("Gantt image saved"); }, "image/png");
@@ -1259,11 +1316,11 @@
     var board=$("board");
     var rows=[], unsched=0;
     currentTasks().filter(passFilter).forEach(function(t){ if(nodeOrDescHasDates(t)) ganttPush(rows, t, 0, true, t.id); else unsched++; });
-    var dated=rows.filter(function(r){return r.dated;});
-    if(!dated.length){ board.innerHTML='<div class="empty"><h3>Nothing on the timeline yet</h3><p>Give a task or a sub-task a due date — and optionally a start date — and it appears here automatically.</p></div>'; return; }
+    var allBars=[]; rows.forEach(function(r){ r.bars.forEach(function(b){ allBars.push(b); }); });
+    if(!allBars.length){ board.innerHTML='<div class="empty"><h3>Nothing on the timeline yet</h3><p>Give a task, sub-task, or sub-sub-task a date and it appears here automatically.</p></div>'; return; }
     var DAY=86400000;
-    var startMs=floorDayMs(Math.min.apply(null, dated.map(function(x){return x.s.getTime();})));
-    var endMs=floorDayMs(Math.max.apply(null, dated.map(function(x){return x.e.getTime();})));
+    var startMs=floorDayMs(Math.min.apply(null, allBars.map(function(b){return b.s.getTime();})));
+    var endMs=floorDayMs(Math.max.apply(null, allBars.map(function(b){return b.e.getTime();})));
     var todayMs=floorDayMs(Date.now());
     if(todayMs<startMs) startMs=todayMs; if(todayMs>endMs) endMs=todayMs;
     startMs-=DAY; endMs+=DAY;
@@ -1284,24 +1341,32 @@
     var gridBg="repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px "+pxDay+"px)";
     var todayLeft=Math.round((todayMs-startMs)/DAY)*pxDay + Math.round(pxDay/2);
 
-    var html='<div class="g-toolbar"><span class="g-toolbar-title">Timeline · '+esc(roleDef(state.role).name)+'</span><button class="btn ghost" id="ganttExport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/></svg>Save as image</button></div>';
+    var anyPA=rows.some(function(r){return r.bars.length===2;});
+    var html='<div class="g-toolbar"><span class="g-toolbar-title">Timeline · '+esc(roleDef(state.role).name)+'</span>'
+      +(anyPA?'<span class="g-legend"><span class="lg lg-plan"></span>Planned<span class="lg lg-actual"></span>Actual</span>':'')
+      +'<button class="btn ghost" id="ganttExport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/></svg>Save as image</button></div>';
     html+='<div class="gantt"><div class="gantt-scroll"><div class="gantt-inner" style="width:'+(LABELW+chartW)+'px">';
     html+='<div class="g-row g-head"><div class="g-label" style="width:'+LABELW+'px">Task</div><div class="g-track" style="width:'+chartW+'px"><div class="g-months">'+monthCells+'</div><div class="g-days">'+dayCells+'</div></div></div>';
     rows.forEach(function(x){
       var rowCls="g-row"+(x.isTask?"":" g-sub");
       var pad=12+x.depth*15;
       var labelInner='<span class="nm">'+(x.depth?'<span class="g-tw">'+(x.depth===1?"– ":"· ")+'</span>':"")+esc(x.title)+'</span>'+(x.isTask&&x.category?'<span class="mt">'+esc(x.category)+'</span>':"");
-      var barHtml="";
-      if(x.dated){
-        var offDays=Math.round((floorDayMs(x.s.getTime())-startMs)/DAY);
-        var spanDays=Math.round((floorDayMs(x.e.getTime())-floorDayMs(x.s.getTime()))/DAY)+1;
-        var left=offDays*pxDay, barCls="g-bar s-"+x.status, barStyle, inner="";
-        if(x.ms){ barStyle='left:'+(left+Math.round(pxDay/2)-7)+'px;'; barCls+=" milestone"; }
-        else { barStyle='left:'+(left+1)+'px; width:'+Math.max(8,spanDays*pxDay-2)+'px;'; inner='<span class="g-fill" style="width:'+x.progress+'%"></span><span class="g-blabel">'+x.progress+'%</span>'; }
-        var ttl=esc(x.title)+" · "+(x.n.start?("start "+x.n.start+" → "):"")+(x.n.due?("due "+x.n.due):(x.ms&&x.n.start?"":"no due"))+" · "+x.progress+"%";
-        barHtml='<div class="'+barCls+'" style="'+barStyle+'" data-tid="'+x.owner+'" title="'+ttl+'">'+inner+'</div>';
-      }
-      html+='<div class="'+rowCls+'"><div class="g-label'+(x.dated?"":" undated")+'" style="width:'+LABELW+'px; padding-left:'+pad+'px">'+labelInner+'</div>'
+      var barHtml="", twoStack=x.bars.length===2;
+      x.bars.forEach(function(bar, bi){
+        var offDays=Math.round((floorDayMs(bar.s.getTime())-startMs)/DAY), left=offDays*pxDay;
+        var isPlan=bar.kind==="plan", cls="g-bar "+(isPlan?"plan":("s-"+x.status)), tid=isPlan?"":(' data-tid="'+x.owner+'"'), topStyle="";
+        if(twoStack){ cls+=" stacked"; topStyle=(bi===0?"top:7px;":"top:23px;")+"transform:none;"; }
+        var kindTip=isPlan?"planned":(bar.kind==="actual"?"actual":""), ttl=esc(x.title)+(kindTip?(" · "+kindTip):"")+" · "+x.progress+"%";
+        if(bar.ms){
+          if(twoStack){ barHtml+='<div class="'+cls+' mini" style="left:'+(left+1)+'px; width:'+Math.max(6,pxDay-2)+'px; '+topStyle+'"'+tid+' title="'+ttl+'"></div>'; }
+          else { barHtml+='<div class="'+cls+' milestone" style="left:'+(left+Math.round(pxDay/2)-7)+'px;"'+tid+' title="'+ttl+'"></div>'; }
+        } else {
+          var spanDays=Math.round((floorDayMs(bar.e.getTime())-floorDayMs(bar.s.getTime()))/DAY)+1, w=Math.max(8,spanDays*pxDay-2);
+          var inner=isPlan?"":('<span class="g-fill" style="width:'+x.progress+'%"></span>'+(twoStack?"":'<span class="g-blabel">'+x.progress+'%</span>'));
+          barHtml+='<div class="'+cls+'" style="left:'+(left+1)+'px; width:'+w+'px; '+topStyle+'"'+tid+' title="'+ttl+'">'+inner+'</div>';
+        }
+      });
+      html+='<div class="'+rowCls+(twoStack?" g-2bar":"")+'"><div class="g-label'+(x.dated?"":" undated")+'" style="width:'+LABELW+'px; padding-left:'+pad+'px">'+labelInner+'</div>'
         +'<div class="g-track" style="width:'+chartW+'px; background:'+gridBg+'"><div class="g-today-line" style="left:'+todayLeft+'px"></div>'+barHtml+'</div></div>';
     });
     html+='</div></div>';
