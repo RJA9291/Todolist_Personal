@@ -374,6 +374,9 @@
   .g-row.g-sub .g-bar .g-blabel{font-size:10px; padding:0 5px}
   .g-tw{color:var(--faint)}
   .g-label.undated .nm{opacity:.75}
+  .g-toolbar{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; flex-wrap:wrap}
+  .g-toolbar-title{font-weight:700; font-size:14px}
+  .g-toolbar .btn{padding:8px 13px}
   @media (max-width:620px){ .seg button .hide-sm{display:none} }
 </style>
 
@@ -1157,6 +1160,80 @@
       progress:isTask?taskProgress(n):nodeProgress(n) });
     (n.children||n.subtasks||[]).forEach(function(c){ ganttPush(out, c, depth+1, false, owner); });
   }
+  function ganttCollect(){
+    var rows=[], unsched=0;
+    currentTasks().filter(passFilter).forEach(function(t){ if(nodeOrDescHasDates(t)) ganttPush(rows,t,0,true,t.id); else unsched++; });
+    return {rows:rows, unsched:unsched};
+  }
+  function exportGanttPNG(){
+    var data=ganttCollect(), rows=data.rows, unsched=data.unsched;
+    var dated=rows.filter(function(r){return r.dated;});
+    if(!dated.length){ toast("Add a date to a task first"); return; }
+    var DAY=86400000;
+    var startMs=floorDayMs(Math.min.apply(null,dated.map(function(x){return x.s.getTime();})));
+    var endMs=floorDayMs(Math.max.apply(null,dated.map(function(x){return x.e.getTime();})));
+    var todayMs=floorDayMs(Date.now());
+    if(todayMs<startMs) startMs=todayMs; if(todayMs>endMs) endMs=todayMs;
+    startMs-=DAY; endMs+=DAY;
+    var totalDays=Math.round((endMs-startMs)/DAY)+1;
+    var pxDay = totalDays>120?12 : totalDays>60?18 : totalDays>30?24 : 34;
+    var chartW=totalDays*pxDay;
+    var cs=getComputedStyle(document.documentElement);
+    function tk(n,f){ var v=cs.getPropertyValue(n).trim(); return v||f; }
+    var C={ bg:tk('--surface','#ffffff'), bg2:tk('--surface-2','#f6f7fb'), text:tk('--text','#191b30'), muted:tk('--muted','#666b8c'), faint:tk('--faint','#9297b6'), border:tk('--border','#e6e7f2'), accent:tk('--accent','#4f46e5'),
+      todo:tk('--todo','#5b6472'), todoW:tk('--todo-weak','#eef0f3'), prog:tk('--prog','#c47f13'), progW:tk('--prog-weak','#fbf0dc'), done:tk('--done','#0f9d6a'), doneW:tk('--done-weak','#e3f6ee'), red:tk('--pri-high','#d13d3d') };
+    function sCol(s){ return s==='done'?{b:C.doneW,f:C.done}:s==='prog'?{b:C.progW,f:C.prog}:{b:C.todoW,f:C.todo}; }
+    var PAD=18, titleH=46, monthH=26, dayH=22, axisH=monthH+dayH, labelW=190, footerH=30;
+    function rowH(r){ return r.isTask?34:27; }
+    var rowsH=rows.reduce(function(a,r){return a+rowH(r);},0);
+    var W=PAD*2+labelW+chartW, H=PAD*2+titleH+axisH+rowsH+footerH, scale=2;
+    var cv=document.createElement('canvas'); cv.width=W*scale; cv.height=H*scale;
+    var g=cv.getContext('2d'); g.scale(scale,scale); g.textBaseline='middle';
+    var FF="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif";
+    function rr(x,y,w,h,r){ r=Math.min(r,h/2,w/2); g.beginPath(); if(g.roundRect){ g.roundRect(x,y,w,h,r); } else { g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); } }
+    function clip(str,mw){ if(g.measureText(str).width<=mw) return str; var s=str; while(s.length && g.measureText(s+"…").width>mw) s=s.slice(0,-1); return s+"…"; }
+    g.fillStyle=C.bg; g.fillRect(0,0,W,H);
+    var def=roleDef(state.role);
+    g.fillStyle=C.text; g.font="700 20px "+FF; g.fillText(def.name+" — Timeline", PAD, PAD+14);
+    g.fillStyle=C.muted; g.font="400 12px "+FF;
+    g.fillText("Generated "+new Date().toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})+" · TaskField", PAD, PAD+34);
+    var chartX=PAD+labelW, axisY=PAD+titleH, rowsTop=axisY+axisH, rowsBottom=rowsTop+rowsH;
+    for(var i=0;i<totalDays;i++){ var x=chartX+i*pxDay, d=new Date(startMs+i*DAY), wd=d.getDay();
+      if(wd===0||wd===6){ g.fillStyle=C.bg2; g.globalAlpha=0.55; g.fillRect(x,axisY+monthH,pxDay,dayH+rowsH); g.globalAlpha=1; }
+      g.strokeStyle=C.border; g.lineWidth=1; g.beginPath(); g.moveTo(x+0.5,axisY+monthH); g.lineTo(x+0.5,rowsBottom); g.stroke(); }
+    g.beginPath(); g.moveTo(chartX+chartW+0.5,axisY+monthH); g.lineTo(chartX+chartW+0.5,rowsBottom); g.stroke();
+    var mCur=null,mStart=0,mLabel="";
+    g.font="700 11px "+FF; g.fillStyle=C.muted;
+    for(var i2=0;i2<totalDays;i2++){ var d2=new Date(startMs+i2*DAY), mk=d2.getFullYear()+"-"+d2.getMonth();
+      if(mk!==mCur){ if(mCur!==null) g.fillText(mLabel, chartX+mStart*pxDay+5, axisY+monthH/2); mCur=mk; mStart=i2; mLabel=d2.toLocaleDateString(undefined,{month:"short",year:"numeric"}); } }
+    g.fillText(mLabel, chartX+mStart*pxDay+5, axisY+monthH/2);
+    if(pxDay>=16){ g.font="400 9px "+FF; g.textAlign="center";
+      for(var i3=0;i3<totalDays;i3++){ var d3=new Date(startMs+i3*DAY), isT=(floorDayMs(d3.getTime())===todayMs); g.fillStyle=isT?C.accent:C.faint; g.fillText(String(d3.getDate()), chartX+i3*pxDay+pxDay/2, axisY+monthH+dayH/2); }
+      g.textAlign="left"; }
+    g.strokeStyle=C.border; g.beginPath(); g.moveTo(PAD,rowsTop+0.5); g.lineTo(PAD+labelW+chartW,rowsTop+0.5); g.stroke();
+    g.beginPath(); g.moveTo(chartX+0.5,axisY); g.lineTo(chartX+0.5,rowsBottom); g.stroke();
+    g.fillStyle=C.muted; g.font="700 10px "+FF; g.fillText("TASK", PAD, axisY+axisH/2);
+    var todayX=chartX+Math.round((todayMs-startMs)/DAY)*pxDay+pxDay/2;
+    g.strokeStyle=C.red; g.lineWidth=2; g.globalAlpha=0.7; g.beginPath(); g.moveTo(todayX,axisY+monthH); g.lineTo(todayX,rowsBottom); g.stroke(); g.globalAlpha=1; g.lineWidth=1;
+    var y=rowsTop;
+    rows.forEach(function(r){ var h=rowH(r);
+      g.fillStyle=r.isTask?C.text:C.muted; g.font=(r.isTask?"600 13px ":"400 12px ")+FF;
+      var pad=PAD+r.depth*13, prefix=r.depth?(r.depth===1?"– ":"· "):"";
+      g.fillText(clip(prefix+r.title, labelW-(pad-PAD)-10), pad, y+h/2);
+      if(r.dated){ var offDays=Math.round((floorDayMs(r.s.getTime())-startMs)/DAY), spanDays=Math.round((floorDayMs(r.e.getTime())-floorDayMs(r.s.getTime()))/DAY)+1;
+        var bx=chartX+offDays*pxDay, col=sCol(r.status), bh=r.isTask?18:14, by=y+(h-bh)/2;
+        if(r.ms){ var cxp=bx+pxDay/2, cyp=y+h/2, ds=7; g.fillStyle=col.f; g.beginPath(); g.moveTo(cxp,cyp-ds); g.lineTo(cxp+ds,cyp); g.lineTo(cxp,cyp+ds); g.lineTo(cxp-ds,cyp); g.closePath(); g.fill(); }
+        else { var bw=Math.max(8,spanDays*pxDay-2); g.fillStyle=col.b; rr(bx+1,by,bw,bh,5); g.fill();
+          var fw=Math.round(bw*(r.progress||0)/100); if(fw>0){ g.fillStyle=col.f; g.globalAlpha=r.status==="todo"?0.5:0.6; rr(bx+1,by,fw,bh,5); g.fill(); g.globalAlpha=1; }
+          g.fillStyle=C.text; g.font="700 10px "+FF; g.fillText(r.progress+"%", bx+7, by+bh/2); } }
+      g.strokeStyle=C.border; g.globalAlpha=0.6; g.beginPath(); g.moveTo(PAD,y+h+0.5); g.lineTo(PAD+labelW+chartW,y+h+0.5); g.stroke(); g.globalAlpha=1;
+      y+=h; });
+    g.fillStyle=C.muted; g.font="400 11px "+FF;
+    g.fillText(unsched?(unsched+" task"+(unsched>1?"s":"")+" not shown (no dates)"):"All dated tasks shown", PAD, rowsBottom+footerH/2);
+    cv.toBlob(function(blob){ if(!blob){ toast("Couldn't create image"); return; } var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+      a.download="taskfield-gantt-"+def.name.replace(/[^a-z0-9]+/gi,"-").toLowerCase()+"-"+new Date().toISOString().slice(0,10)+".png"; a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); },1500); toast("Gantt image saved"); }, "image/png");
+  }
   function renderGantt(){
     var board=$("board");
     var rows=[], unsched=0;
@@ -1186,7 +1263,8 @@
     var gridBg="repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px "+pxDay+"px)";
     var todayLeft=Math.round((todayMs-startMs)/DAY)*pxDay + Math.round(pxDay/2);
 
-    var html='<div class="gantt"><div class="gantt-scroll"><div class="gantt-inner" style="width:'+(LABELW+chartW)+'px">';
+    var html='<div class="g-toolbar"><span class="g-toolbar-title">Timeline · '+esc(roleDef(state.role).name)+'</span><button class="btn ghost" id="ganttExport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 21h16"/></svg>Save as image</button></div>';
+    html+='<div class="gantt"><div class="gantt-scroll"><div class="gantt-inner" style="width:'+(LABELW+chartW)+'px">';
     html+='<div class="g-row g-head"><div class="g-label" style="width:'+LABELW+'px">Task</div><div class="g-track" style="width:'+chartW+'px"><div class="g-months">'+monthCells+'</div><div class="g-days">'+dayCells+'</div></div></div>';
     rows.forEach(function(x){
       var rowCls="g-row"+(x.isTask?"":" g-sub");
@@ -1211,6 +1289,7 @@
     board.innerHTML=html;
     var sc=board.querySelector(".gantt-scroll"); if(sc) sc.scrollLeft=Math.max(0, todayLeft-180);
     board.querySelectorAll(".g-bar[data-tid]").forEach(function(b){ b.addEventListener("click", function(){ var t=state.tasks.find(function(x){return x.id===b.getAttribute("data-tid");}); if(t) openComposer(t); }); });
+    var ex=$("ganttExport"); if(ex) ex.onclick=exportGanttPNG;
   }
 
   function renderTasks(){
